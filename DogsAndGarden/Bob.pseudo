@@ -1,0 +1,21 @@
+func Bob() {
+	for {
+		entry:
+			// Round 1 Bob vs Alice
+			bobs_flag[0] = true
+			bobs_flag[1] = !alices_flag[1] // Same as 2 dogs 1 garden solution. 
+
+			Await(!alices_flag[0] || bobs_flag[1] == alices_flag[1])
+
+			bobs_flag[2] = true
+			bobs_flag[3] = !charlies_flag[2]
+
+			Await(!charlies_flag[0] || bobs_flag[3] == charlies_flag[2])
+		critical:
+			// Bob's dog is in the garden
+		exit:
+			// Reset rounds
+			bobs_flag[2] = false
+			bobs_flag[0] = false 
+	}
+}

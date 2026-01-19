@@ -1,0 +1,16 @@
+func Charlie() {
+	for {
+		entry:
+			charlies_flag[0] = true
+			charlies_flag[1] = alices_flag[3]
+			charlies_flag[2] = bobs_flag[3]
+
+			Await((!alices_flag[2] || charlies_flag[1] != alices_flag[3]) &&
+					(!bobs_flag[2] || charlies_flag[2] != bobs_flag[3])
+		critical:
+			// Charlie's dog is in the garden
+		exit:
+			charlies_flag[0] = false
+	}
+}
+

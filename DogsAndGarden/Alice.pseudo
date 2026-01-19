@@ -1,0 +1,23 @@
+func Alice() {
+	for {
+		entry:
+			// Round 1 Alice vs Bob
+			alices_flag[0] = true // A wants to enter round 1
+			alices_flag[1] = bobs_flag[1] // Same as 2 dogs 1 garden solution. 
+			
+			Await(!bobs_flag[0] || alices_flag[1] != bobs_flag[1])
+			
+			// Alice wins vs Bob.
+			// Round 2 Alice vs Charlie
+			alices_flag[2] = true
+			alices_flag[3] = !charlies_flag[1]
+
+			Await(!charlies_flag[0] || alices_flag[3] == charlies_flag[1])
+		critical:
+			// Alice's dog in the yard
+		exit:
+			// Reset rounds access
+			alices_flag[2] = false
+			alices_flag[0] = false
+	}
+}
