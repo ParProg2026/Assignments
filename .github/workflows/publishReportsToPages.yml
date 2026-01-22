@@ -17,18 +17,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y texlive-full
+
       - name: Compile LaTeX reports
-        uses: xu-cheng/latex-action@v3
-        with:
-          root_file: "**/report.tex"
-          # -outdir=. ensures it builds relative to the source .tex
-          args: "-pdf -interaction=nonstopmode -halt-on-error -outdir=."
+        run: |
+          find . -name "report.tex" | while read -r tex; do
+            dir=$(dirname "$tex")
+            pdflatex -output-directory="$dir" "$tex"
+          done
 
       - name: Prepare site structure
         run: |
           mkdir -p site
-          # Find all PDFs. If they are in the root, move them to a simulated subdir
-          # based on the source folder to prevent 404s.
           find . -name "report.pdf" -not -path "./site/*" | while read -r pdf; do
             dest="site/$(dirname "$pdf")"
             mkdir -p "$dest"
