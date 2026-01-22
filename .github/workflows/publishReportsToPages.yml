@@ -2,11 +2,8 @@ name: Build and publish Latex Assignments
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,7 +13,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Build All Reports
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,46 +21,31 @@ jobs:
         uses: xu-cheng/latex-action@v3
         with:
           root_file: "**/report.tex"
-          # Ensures the PDF is generated in the same folder as the .tex file
-          args: "-pdf -interaction=nonstopmode -halt-on-error"
-          continue_on_error: false
-
-      - name: Debug - List generated files
-        run: |
-          echo "Searching for generated PDFs..."
-          find . -name "*.pdf"
+          # -outdir=. ensures it builds relative to the source .tex
+          args: "-pdf -interaction=nonstopmode -halt-on-error -outdir=."
 
       - name: Prepare site structure
         run: |
           mkdir -p site
-          # Search from root, excluding the 'site' folder itself to avoid recursion
-          # Use -exec to ensure we handle paths with spaces if necessary
-          find . -name "report.pdf" -not -path "./site/*" -exec cp --parents {} site/ \;
+          # Find all PDFs. If they are in the root, move them to a simulated subdir
+          # based on the source folder to prevent 404s.
+          find . -name "report.pdf" -not -path "./site/*" | while read -r pdf; do
+            dest="site/$(dirname "$pdf")"
+            mkdir -p "$dest"
+            cp "$pdf" "$dest/"
+          done
 
       - name: Auto-generate index.html
         run: |
-          echo "<html><head><title>ParProg 2026 Reports</title>" > site/index.html
-          echo "<style>body{font-family:sans-serif; line-height:1.6; padding:40px; color:#333;} h1{color:#444;} li{margin:10px 0;} a{text-decoration:none; color:#9c20af; font-weight:bold;} a:hover{text-decoration:underline;}</style>" >> site/index.html
-          echo "</head><body>" >> site/index.html
+          echo "<html><head><title>ParProg 2026 Reports</title></head><body>" > site/index.html
           echo "<h1>Assignments Index</h1><ol>" >> site/index.html
-          
-          # We look inside 'site' for the copied PDFs
-          # We sort them to maintain a consistent order
           find site -name "report.pdf" | sort | while read -r file; do
-            # The URL needs to be relative to the site root
-            # e.g., site/DogsAndGarden/report.pdf -> DogsAndGarden/report.pdf
             REL_PATH=${file#site/}
-            # Clean leading slashes
-            REL_PATH=${REL_PATH#/}
-            
-            # Extract the directory name as the label
-            LABEL=$(dirname "$REL_PATH")
-            
-            if [ "$LABEL" != "." ]; then
-                echo "<li><a href=\"$REL_PATH\">$LABEL Report</a></li>" >> site/index.html
+            LABEL=$(dirname "$REL_PATH" | sed 's|^\./||; s|^\.||')
+            if [ -n "$LABEL" ]; then
+              echo "<li><a href=\"$REL_PATH\">$LABEL Report</a></li>" >> site/index.html
             fi
           done
-          
           echo "</ol></body></html>" >> site/index.html
 
       - name: Upload Pages artifact
@@ -73,13 +54,11 @@ jobs:
           path: site
 
   deploy:
-    name: Deploy to GitHub Pages
     needs: build
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    environment: github-pages
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
