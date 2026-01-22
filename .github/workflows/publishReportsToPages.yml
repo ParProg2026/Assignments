@@ -1,0 +1,71 @@
+name: Build and publish Latex Assignments
+
+on:
+  push:
+    branches: [ main, threeDogs ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/xu-cheng/texlive-full:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile all report.tex files
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Searching for report.tex files..."
+          find . -maxdepth 2 -type f -name 'report.tex' | while IFS= read -r tex; do
+            dir=$(dirname "$tex")
+            base=$(basename "$tex")
+            echo "Compiling $tex in $dir ..."
+            (cd "$dir" && latexmk -pdf -file-line-error -halt-on-error -interaction=nonstopmode "$base")
+          done
+
+      - name: Prepare site directory and index
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf site
+          mkdir -p site/
+          # copy PDFs preserving the Assignments/... path
+          find . -type f -name 'report.pdf' | while IFS= read -r pdf; do
+            dest="site/${pdf#./}"       # remove leading ./ if present
+            mkdir -p "$(dirname "$dest")"
+            cp -v "$pdf" "$dest"
+          done
+
+          # generate a simple index page that lists reports with relative links
+          out=site/index.html
+          mkdir -p "$(dirname "$out")"
+          cat > "$out" <<'HTML'
+          <!doctype html>
+          <html>
+          <head><meta charset="utf-8"><title>Assignments</title></head>
+          <body>
+          <h1>Assignments</h1>
+          <ul>
+          HTML
+
+                    find site -maxdepth 2 -type f -name 'report.pdf' | sed 's|^site/||' | sort | while IFS= read -r p; do
+                      echo "<li><a href=\"${p}\">${p}</a></li>" >> "$out"
+                    done
+
+                    cat >> "$out" <<'HTML'
+          </ul>
+          </body>
+          </html>
+          HTML
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
