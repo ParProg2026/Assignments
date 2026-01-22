@@ -1,0 +1,73 @@
+name: Build and publish Latex Assignments
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build All Reports
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Compile LaTeX reports
+        uses: xu-cheng/latex-action@v3
+        with:
+          # Compiles every report.tex found in any subdirectory of Assignments
+          root_file: Assignments/**/report.tex
+          continue_on_error: false
+
+      - name: Prepare site structure
+        run: |
+          mkdir -p site
+          # Copy PDFs while preserving the directory path (e.g., site/Assignments/threeDogs/report.pdf)
+          find Assignments -name "report.pdf" | xargs cp --parents -t site/
+
+      - name: Auto-generate index.html
+        run: |
+          # Initialize the HTML file with basic styling to match your report aesthetics
+          echo "<html><head><title>ParProg 2026 Reports</title>" > site/index.html
+          echo "<style>body{font-family:sans-serif; line-height:1.6; padding:40px; color:#333;} h1{color:#444;} a{text-decoration:none; color:#9c20af;} a:hover{text-decoration:underline;}</style>" >> site/index.html
+          echo "</head><body>" >> site/index.html
+          echo "<h1>Assignments Index (A-Z)</h1><ol>" >> site/index.html
+          
+          # Find all PDFs in the site directory and create relative links
+          # We use sort to ensure the ordered list is alphabetical by folder name
+          find site/Assignments -name "report.pdf" | sort | while read -r file; do
+            # Strip the 'site/' prefix for the actual link
+            REL_PATH=${file#site/}
+            # Extract the folder name (e.g., 'threeDogs') to use as the link label
+            LABEL=$(dirname "$REL_PATH" | xargs basename)
+            echo "<li><a href=\"$REL_PATH\">$LABEL Report</a></li>" >> site/index.html
+          done
+          
+          echo "</ol></body></html>" >> site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
