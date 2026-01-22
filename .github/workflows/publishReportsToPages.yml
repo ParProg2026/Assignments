@@ -24,30 +24,41 @@ jobs:
       - name: Compile LaTeX reports
         uses: xu-cheng/latex-action@v3
         with:
-          # Compiles every report.tex found in any subdirectory
           root_file: "**/report.tex"
+          # Ensures the PDF is generated in the same folder as the .tex file
+          args: "-pdf -interaction=nonstopmode -halt-on-error"
           continue_on_error: false
+
+      - name: Debug - List generated files
+        run: |
+          echo "Searching for generated PDFs..."
+          find . -name "*.pdf"
 
       - name: Prepare site structure
         run: |
           mkdir -p site
-          # Use "." to search from the root of the repo
-          # The --parents flag will recreate the subfolder structure inside site/
-          find . -name "report.pdf" -not -path "./site/*" | xargs cp --parents -t site/
+          # Search from root, excluding the 'site' folder itself to avoid recursion
+          # Use -exec to ensure we handle paths with spaces if necessary
+          find . -name "report.pdf" -not -path "./site/*" -exec cp --parents {} site/ \;
 
       - name: Auto-generate index.html
         run: |
           echo "<html><head><title>ParProg 2026 Reports</title>" > site/index.html
-          echo "<style>body{font-family:sans-serif; line-height:1.6; padding:40px; color:#333;} h1{color:#444;} a{text-decoration:none; color:#9c20af;} a:hover{text-decoration:underline;}</style>" >> site/index.html
+          echo "<style>body{font-family:sans-serif; line-height:1.6; padding:40px; color:#333;} h1{color:#444;} li{margin:10px 0;} a{text-decoration:none; color:#9c20af; font-weight:bold;} a:hover{text-decoration:underline;}</style>" >> site/index.html
           echo "</head><body>" >> site/index.html
           echo "<h1>Assignments Index</h1><ol>" >> site/index.html
           
-          # Iterate through the PDFs now moved into the site folder
+          # We look inside 'site' for the copied PDFs
+          # We sort them to maintain a consistent order
           find site -name "report.pdf" | sort | while read -r file; do
-            # Strip 'site/' to get the relative URL
+            # The URL needs to be relative to the site root
+            # e.g., site/DogsAndGarden/report.pdf -> DogsAndGarden/report.pdf
             REL_PATH=${file#site/}
-            # Clean up the path to create a nice label (e.g., ./DogsAndGarden/report.pdf -> DogsAndGarden)
-            LABEL=$(dirname "$REL_PATH" | sed 's|^\./||')
+            # Clean leading slashes
+            REL_PATH=${REL_PATH#/}
+            
+            # Extract the directory name as the label
+            LABEL=$(dirname "$REL_PATH")
             
             if [ "$LABEL" != "." ]; then
                 echo "<li><a href=\"$REL_PATH\">$LABEL Report</a></li>" >> site/index.html
