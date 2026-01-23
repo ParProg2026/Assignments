@@ -1,0 +1,110 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\graphicspath{{img/}}
+
+\usepackage{xcolor}
+
+% --- Font Settings ---
+\renewcommand\familydefault{\sfdefault}
+\usepackage{tgheros}
+% zi4 is a high-quality, professional monospaced font available in almost all distributions
+\usepackage[varqu]{zi4} 
+
+\usepackage{amsmath,amssymb,amsthm,textcomp}
+\usepackage{geometry}
+\geometry{left=25mm,right=25mm, top=20mm,bottom=20mm}
+
+\linespread{1.3}
+\newcommand{\linia}{\rule{\linewidth}{0.5pt}}
+
+% --- Header and Footer ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{Assignment Report}
+\cfoot{}
+\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% --- Code Listing Settings ---
+\usepackage{listings}
+\lstset{
+    language=Go,
+    basicstyle=\ttfamily\small,
+    aboveskip={1.0\baselineskip},
+    belowskip={1.0\baselineskip},
+    columns=fixed,
+    extendedchars=true,
+    breaklines=true,
+    tabsize=4,
+    frame=lines,
+    keywordstyle=\color[rgb]{0.627,0.126,0.941},
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\color[rgb]{0,0,0},
+    numbers=left,
+    numberstyle=\small,
+    stepnumber=1,
+    numbersep=10pt,
+    captionpos=t
+}
+
+\begin{document}
+
+\begin{center}
+    \vspace{2ex}
+    {\huge \textsc{Readers and Writers \\ }}
+    {\LARGE \textsc{The rise of the writers}}
+    \vspace{1ex}
+
+    \linia\\
+    Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl  \hfill \today % Replace with your name, alphabetically ordered
+    \vspace{4ex}
+\end{center}
+
+\section{The story of all the semaphores}
+
+The semaphores \lstinline{m1} and \lstinline{m2} are pretty straight forward.
+First one is to avoid collisions when writing to the variable \lstinline{nr} and the is for \lstinline{nw}.
+Without them we cannot gurantee sane results for either of them.
+But by this we can now guarantee that both variables are edited correctly and assure correct counting.
+
+We now need to assure that every writer has exclusive access.
+The semaphore responsible for this is \lstinline{writer}.
+There are three situations that could appear:
+\begin{itemize}
+    \item no one has access, here the semaphore is not set
+    \item one writer has access, here the currently active writer holds the semaphore
+    \item multiple readers have access, here the first reader aquires and the last one releases the semaphore
+\end{itemize}
+A writer can only get access if he aquires the semaphore.
+The first readers can get access only when he aquires the semaphore.
+All further readers can access the data without aquires this semaphore.
+They are still safe as the first reader aquired it.
+This procedure for the readers is protected by the semaphore \lstinline{m1}.
+As a result further readers cannot get past the first reader and we guarantee that every reader checks the number of readers in a sequential order.
+Also the releasing is protected by \lstinline{m1} to guarantee correct behaviour.
+
+By now we have a correct behaviour overall, but without the priority for writers.
+This priority is guaranteed by the semaphore \lstinline{reader}.
+Every reader needs to request this semaphore before it is able to get read access.
+If this semaphore would be blocked, the number of active readers can only decrease till none is left.
+This leads to the following needed assumption:
+As long as a writer is writing or waiting to write, the \lstinline{reader} semaphore is set.
+To achieve this we track the number of currently interested writers \lstinline{nw}.
+As the variable is protected as described in the beginning, the first appearing writer can lock the \lstinline{reader} semaphore.
+Every writer coming later only increases the number of writers (nw).
+The semaphore \lstinline{reader} is only released after the last writer is finished (when nw is 0).
+This prevents readers from slipping between writers.
+
+The most critical part is where the first writer tries to lock the semaphore \lstinline{reader}.
+Without the semaphore \lstinline{m3} it could happen, that the writer needs to compete against multiple readers.
+With the semaphore \lstinline{m3} we can guarantee that only one other reader is able to compete against the writer.
+As we have no FIFO or other fairness guarantee about semaphore this gives us a better chance for the writer to succeed.
+But if the reader has a higher priority at the semaphore and a very unfair scheduler it could still happen that the writer waits forever.
+
+\end{document}
