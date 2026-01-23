@@ -17,21 +17,30 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install TeX Live
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y texlive-latex-base texlive-fonts-recommended texlive-latex-extra
       - name: Compile LaTeX reports
-        run: |
-          find . -name "report.tex" | while read -r tex; do
-            dir=$(dirname "$tex")
-            pdflatex -output-directory="$dir" "$tex"
-          done
+        uses: xu-cheng/latex-action@v3
+        with:
+          # Use a shell script to iterate and compile locally
+          run: |
+            find . -name "report.tex" -not -path "./site/*" | while read -r tex_file; do
+              dir=$(dirname "$tex_file")
+              base=$(basename "$tex_file")
+              echo "Compiling $tex_file in $dir..."
+              
+              # Move into the directory so output stays local
+              cd "$dir"
+              latexmk -pdf -interaction=nonstopmode -halt-on-error "$base"
+              # Return to root for the next iteration
+              cd - > /dev/null
+            done
+          scheme: full
 
       - name: Prepare site structure
         run: |
           mkdir -p site
+          # Find PDFs in their original subdirs and copy with parents
           find . -name "report.pdf" -not -path "./site/*" | while read -r pdf; do
+            # This preserves the folder name (e.g. site/DogsAndGarden/report.pdf)
             dest="site/$(dirname "$pdf")"
             mkdir -p "$dest"
             cp "$pdf" "$dest/"
@@ -39,13 +48,16 @@ jobs:
 
       - name: Auto-generate index.html
         run: |
-          echo "<html><head><title>ParProg 2026 Reports</title></head><body>" > site/index.html
-          echo "<h1>Assignments Index</h1><ol>" >> site/index.html
+          echo "<html><head><title>ParProg 2026 Reports</title>" > site/index.html
+          echo "<style>body{font-family:sans-serif; padding:40px;} li{margin:10px 0;} a{color:#9c20af; text-decoration:none; font-weight:bold;}</style>" >> site/index.html
+          echo "</head><body><h1>Assignments Index</h1><ol>" >> site/index.html
+          
           find site -name "report.pdf" | sort | while read -r file; do
             REL_PATH=${file#site/}
-            LABEL=$(dirname "$REL_PATH" | sed 's|^\./||; s|^\.||')
-            if [ -n "$LABEL" ]; then
-              echo "<li><a href=\"$REL_PATH\">$LABEL Report</a></li>" >> site/index.html
+            REL_PATH=${REL_PATH#/}
+            LABEL=$(dirname "$REL_PATH")
+            if [ "$LABEL" != "." ]; then
+                echo "<li><a href=\"$REL_PATH\">$LABEL Report</a></li>" >> site/index.html
             fi
           done
           echo "</ol></body></html>" >> site/index.html
@@ -58,9 +70,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     environment: github-pages
-    outputs:
-      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
