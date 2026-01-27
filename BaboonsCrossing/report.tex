@@ -1,0 +1,184 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+% --- Font Settings ---
+\renewcommand\familydefault{\sfdefault}
+\usepackage{tgheros}
+\usepackage[varqu]{zi4} 
+
+\usepackage{amsmath,amssymb,amsthm,textcomp}
+\usepackage{geometry}
+\geometry{left=25mm,right=25mm, top=20mm,bottom=20mm}
+
+\linespread{1.3}
+\newcommand{\linia}{\rule{\linewidth}{0.5pt}}
+
+% --- Header and Footer ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{Baboon Crossing Protocol}
+\cfoot{}
+\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% --- Code Listing Settings ---
+\usepackage{listings}
+\lstset{
+    language=C, 
+    basicstyle=\ttfamily\small,
+    aboveskip={1.0\baselineskip},
+    belowskip={1.0\baselineskip},
+    columns=fixed,
+    extendedchars=true,
+    breaklines=true,
+    tabsize=4,
+    frame=lines,
+    keywordstyle=\color[rgb]{0.627,0.126,0.941},
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\color[rgb]{0,0,0},
+    numbers=left,
+    numberstyle=\small,
+    stepnumber=1,
+    numbersep=10pt,
+    captionpos=t,
+    morekeywords={Semaphore, LightSwitch, wait, signal, lock, unlock, process, cobegin, coend, func}
+}
+
+\begin{document}
+
+\begin{center}
+\vspace{2ex}
+{\huge \textsc{Baboon Crossing Synchronization Scheme}}
+\vspace{1ex}
+\\
+\linia\\
+Automated Report Generation \hfill \today
+\vspace{4ex}
+\end{center}
+
+\section*{1. Description of the Solution}
+
+To solve the Baboon Crossing problem, we must ensure that baboons crossing from opposing directions (North and South) do not meet on the rope, while also adhering to a weight limit of 60 lb. We define the capacity of the rope in terms of "tokens", where the rope has a total capacity of 2 tokens. Based on the average weights (Male: 55 lb, Female: 28 lb), a male baboon requires 2 tokens and a female baboon requires 1 token.
+
+Our synchronization protocol employs the following primitives:
+\begin{itemize}
+    \item \textbf{Directional Mutual Exclusion:} To prevent baboons from opposing directions from crossing simultaneously, we use a \textbf{Lightswitch} pattern. As described in \textit{The Little Book of Semaphores} (p. 70), this pattern allows the first baboon of a group to lock the resource (the rope) and the last one to unlock it, effectively treating a stream of baboons as a single entity.
+    \item \textbf{Starvation Prevention:} Simply using a mutex for direction can lead to starvation if a continuous stream of baboons enters from one side. To resolve this, we use a \textbf{Turnstile} pattern, as seen in \textit{The Little Book of Semaphores} (p. 29, 75). A baboon must pass the turnstile before locking the directional switch. If a baboon from the opposite side arrives, they wait on the turnstile, forcing subsequent arrivals from the current direction to wait, thus guaranteeing the stream will eventually conclude.
+    \item \textbf{Atomic Capacity Acquisition:} A deadlock can occur if two males attempt to cross simultaneously and each grabs only one token (capacity = 0). To prevent this, the acquisition of capacity tokens is protected by a mutex (\texttt{ropeGrabbing}), ensuring it is atomic.
+\end{itemize}
+\newpage
+\section*{2. Proposed Pseudocode}
+The following pseudocode implements the logic described above. It utilizes a \texttt{LightSwitch} for each direction, a \texttt{turnstile} for starvation prevention, and a \texttt{ropeGrabbing} mutex for atomic token acquisition.
+
+\begin{lstlisting}[caption=Semaphores and Synchronization Variables]
+// Global Variables
+rope = Semaphore(1)         // Direction Mutex
+capacity = Semaphore(2)     // Capacity tokens (Weight Limit)
+turnstile = Semaphore(1)    // Avoids starvation on direction
+ropeGrabbing = Semaphore(1) // Atomic acquisition of capacity tokens
+
+northSwitch = LightSwitch() // Tracks crossing from North
+southSwitch = LightSwitch() // Tracks crossing from South
+\end{lstlisting}
+\begin{lstlisting}[caption=Male Baboon Crossing]
+func Male(direction: N | S) {
+    mySwitch = (direction == N) ? northSwitch : southSwitch
+    
+    entry:
+        turnstile.wait()     // Wait for permission to enter
+        mySwitch.lock(rope)  // Lock the rope for my direction (if first)
+        turnstile.signal()   // Release for the next baboon
+        
+        ropeGrabbing.wait()  // Wait if someone else is taking capacity tokens
+        capacity.wait()      // Grab first token
+        capacity.wait()      // Grab second token
+        ropeGrabbing.signal()
+        
+    critical:
+        // Crossing the canyon..
+        
+    exit:
+        ropeGrabbing.wait()  // Ensures the male baboon completely Leaves the rope
+        capacity.signal()    // Release 1st token
+        capacity.signal()    // Release 2nd token
+        ropeGrabbing.signal()// The male baboon Left the rope
+        
+        mySwitch.unlock(rope)// Unlock the rope for the other side (if Last)
+}
+\end{lstlisting}
+\begin{lstlisting}[caption=Female Baboon Crossing]
+func Female(direction: N | S) {
+    mySwitch = (direction == N) ? northSwitch : southSwitch
+    
+    entry:
+        turnstile.wait()
+        mySwitch.lock(rope)
+        turnstile.signal()
+        
+        ropeGrabbing.wait()  // Wants to take a token
+        capacity.wait()      // Takes 1 token
+        ropeGrabbing.signal()// Finished taking token
+        
+    critical:
+        // Crossing the canyon...
+        
+    exit:
+        capacity.signal()    // Release capacity token
+        mySwitch.unlock(rope)// Release rope
+}
+\end{lstlisting}
+
+\section*{3. Argument of Correctness}
+
+\subsection*{3.1 Problem Formalization and Invariants}
+We define the following state variables representing the number of baboons currently on the rope:
+\begin{itemize}
+    \item $N_m$: Male baboons crossing from North
+    \item $N_f$: Female baboons crossing from North
+    \item $S_m$: Male baboons crossing from South
+    \item $S_f$: Female baboons crossing from South
+\end{itemize}
+
+The synchronization scheme must satisfy two primary invariants based on the problem constraints:
+
+\textbf{Invariant 1: Directional Mutual Exclusion} \\
+Baboons can only cross in one direction at a time. If there are baboons crossing from the North, there must be zero from the South, and vice-versa:
+$$ ((N_{m}+N_{f} > 0) \Rightarrow (S_{m}+S_{f} = 0)) \land ((S_{m}+S_{f} > 0) \Rightarrow (N_{m}+N_{f} = 0)) $$
+
+\textbf{Invariant 2: Capacity and Weight Limit} \\
+The rope allows a maximum of 2 tokens. A male consumes 2 tokens and a female consumes 1. The total weight usage must satisfy:
+$$ 2(N_{m}+S_{m}) + 1(N_{f}+S_{f}) \le 2 $$
+
+The resulting combined invariant that the system must maintain is:
+$$ \left( (N_{m}+N_{f} > 0) \Rightarrow (S_{m}+S_{f} = 0) \right) \land \left( 2(N_{m}+S_{m}) + (N_{f}+S_{f}) \le 2 \right) $$
+
+\subsection*{3.2 Proof of Constraint Compliance}
+We demonstrate that the solution satisfies the capacity invariant in all possible valid states:
+
+\begin{itemize}
+    \item \textbf{Case 1 (1 Male on rope):} 
+    $$ 2(1) + 1(0) = 2 \le 2 \quad (\text{True}) $$
+    
+    \item \textbf{Case 2 (2 Males on rope):}
+    $$ 2(2) + 1(0) = 4 \le 2 \quad (\text{False - Impossible State}) $$
+    The second male blocks at \texttt{capacity.wait()} because only 2 tokens are available in the semaphore.
+    
+    \item \textbf{Case 3 (2 Females on rope):}
+    $$ 2(0) + 1(2) = 2 \le 2 \quad (\text{True}) $$
+    
+    \item \textbf{Case 4 (1 Male and 1 Female on rope):}
+    $$ 2(1) + 1(1) = 3 \le 2 \quad (\text{False - Impossible State}) $$
+    If a Male holds 2 tokens, 0 are left; the Female waits. If a Female holds 1 token, 1 is left; the Male waits for 2 tokens (which are not available).
+\end{itemize}
+
+\subsection*{3.3 Liveness and Starvation Prevention}
+Deadlock is prevented during token acquisition by the \texttt{ropeGrabbing} mutex; a Male cannot hold 1 token and wait for another indefinitely. Starvation is prevented by the \texttt{turnstile}. If South baboons are crossing and a North baboon arrives, the North baboon waits on the turnstile. This prevents subsequent South baboons from passing the turnstile, ensuring the South stream eventually drains and the North baboon can proceed.
+
+\end{document}
