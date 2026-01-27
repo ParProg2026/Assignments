@@ -1,0 +1,8 @@
+// Global Variables
+rope = Semaphore(1)         // Direction Mutex
+capacity = Semaphore(2)     // Capacity tokens (Weight Limit)
+turnstile = Semaphore(1)    // Avoids starvation on direction
+ropeGrabbing = Semaphore(1) // Atomic acquisition of capacity tokens
+
+northSwitch = LightSwitch() // Tracks crossing from North
+southSwitch = LightSwitch() // Tracks crossing from South

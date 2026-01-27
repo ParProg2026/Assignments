@@ -1,0 +1,19 @@
+func Female(direction: N | S) {
+    mySwitch = (direction == N) ? northSwitch : southSwitch
+    
+    entry:
+        turnstile.wait()
+        mySwitch.lock(rope)
+        turnstile.signal()
+        
+        ropeGrabbing.wait()  // Wants to take a token
+        capacity.wait()      // Takes 1 token
+        ropeGrabbing.signal()// Finished taking token
+        
+    critical:
+        // Crossing the canyon...
+        
+    exit:
+        capacity.signal()    // Release capacity token
+        mySwitch.unlock(rope)// Release rope
+}

@@ -1,0 +1,24 @@
+func Male(direction: N | S) {
+    mySwitch = (direction == N) ? northSwitch : southSwitch
+    
+    entry:
+        turnstile.wait()     // Wait for permission to enter
+        mySwitch.lock(rope)  // Lock the rope for my direction (if first)
+        turnstile.signal()   // Release for the next baboon
+        
+        ropeGrabbing.wait()  // Wait if someone else is taking capacity tokens
+        capacity.wait()      // Grab first token
+        capacity.wait()      // Grab second token
+        ropeGrabbing.signal()
+        
+    critical:
+        // Crossing the canyon..
+        
+    exit:
+        ropeGrabbing.wait()  // Ensures the male baboon completely Leaves the rope
+        capacity.signal()    // Release 1st token
+        capacity.signal()    // Release 2nd token
+        ropeGrabbing.signal()// The male baboon Left the rope
+        
+        mySwitch.unlock(rope)// Unlock the rope for the other side (if Last)
+}
