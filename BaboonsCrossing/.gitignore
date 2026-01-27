@@ -1,0 +1,50 @@
+### Go ###
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.sum
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+# Dependency directories (remove the comment below if you want to check in vendor)
+# vendor/
+
+### LaTeX ###
+# Main output
+*.pdf
+*.dvi
+*.ps
+
+# Core auxiliary files
+*.aux
+*.log
+*.toc
+*.out
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+
+# BibTeX / Biber files
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+
+# VS Code LaTeX Workshop specific
+*.ext
+*.nav
+*.snm
+*.vrb
+*.maf
+*.mtc
+*.mtc0
+
+### OS / Editors ###
+.DS_Store
+.vscode/
