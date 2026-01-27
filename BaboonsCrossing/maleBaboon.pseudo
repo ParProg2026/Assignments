@@ -7,18 +7,16 @@ func Male(direction: N | S) {
         turnstile.signal()   // Release for the next baboon
         
         ropeGrabbing.wait()  // Wait if someone else is taking capacity tokens
-        capacity.wait()      // Grab first token
-        capacity.wait()      // Grab second token
+        capacity.wait(2)     // Atomic: Grab 2 tokens
         ropeGrabbing.signal()
         
     critical:
         // Crossing the canyon..
         
     exit:
-        ropeGrabbing.wait()  // Ensures the male baboon completely Leaves the rope
-        capacity.signal()    // Release 1st token
-        capacity.signal()    // Release 2nd token
-        ropeGrabbing.signal()// The male baboon Left the rope
+        // Atomic release of 2 tokens. 
+        // No mutex needed here, preventing deadlock with Female entry.
+        capacity.signal(2)    
         
         mySwitch.unlock(rope)// Unlock the rope for the other side (if Last)
 }
