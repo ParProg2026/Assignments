@@ -1,0 +1,72 @@
+Tables: P1, P2, P3, P4
+
+total <Plates, Bowls> : 8, 12
+
+request <Plates, Bowls> {
+  [P1] : 7, 7
+  [P2] : 6, 10
+  [P3] : 1, 2
+  [P4] : 2, 4
+}
+
+allocation <Plates, Bowls> {
+  [P1] : 2, 3
+  [P2] : 3, 5
+  [P3] : 0, 1
+  [P4] : 1, 2
+}
+
+available <Plates, Bowls> : 2, 1
+
+need <Plates, Bowls> {
+  [P1] : 5, 4
+  [P2] : 3, 5
+  [P3] : 1, 1
+  [P4] : 1, 2
+}
+
+A: Will the restaurant be able to feed all four parties successfully?
+In the first pass of the bankers algorithm, a loop runs for each table, checking if the availability of resources is greater or equal to their need. If not the ok flag is set to false and they wait. In the first pass, only P3 continues, the request is granted such that:
+  available      = [2,1] - [1,2] = [1,-1]
+  allocation[P3] = [0,1] + [1,2] = [1, 3]
+  need[P3]       = [1,1] - [1,2] = [0,-1]
+We go into the Safe function and make a copy of available, free. And check, in a loop, if any tables need can be satisfied. We see P3 can be satisfied and add its allocation to free.
+free = [1,-1] + [1, 3] = [2,2]
+P3 is marked as done, and the loop resets, free can now satisify P4, free increases to [3,4] and the loop resets. No other tables can be satisfied, so Safe returns false, and the previous state is restored.
+The restaurant couldn't feed all parties.
+
+request <Plates, Bowls> {
+  [P1] : 7, 7
+  [P2] : 6, 10
+  [P3] : 1, 2
+  [P4] : 2, 4
+  [P5] : 5, 3
+}
+
+allocation <Plates, Bowls> {
+  [P1] : 2, 3
+  [P2] : 3, 5
+  [P3] : 0, 1
+  [P4] : 1, 2
+  [P5] : 2, 0
+}
+
+available <Plates, Bowls> : 0, 1
+
+need <Plates, Bowls> {
+  [P1] : 5, 4
+  [P2] : 3, 5
+  [P3] : 1, 1
+  [P4] : 1, 2
+  [P5] : 3, 3
+}
+
+B: Assume a new dinner party,  P5, comes to the restaurant now. Their maximum needs are five plates and three bowls. Initially, the waiter brings two plates to them. To feed all five parties successfully, what is the minimum number of additional bowls and plates the restaurant needs to buy? Justify your answer.
+
+The restaurant must first buy a single plate to serve P3. Free becomes [1,2] 
+They can serve P4, so free becomes [2,4]. The restaurant can't serve more parties.
+They buy an extra plate. So free becomes [3,4]
+They serve P5, free becomes [5,4].
+They serve P1, free becomes [7,7].
+They serve P2, free becomes [10,12]
+The restaurant only need to purchase two additional plates.
