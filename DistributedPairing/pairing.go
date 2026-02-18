@@ -77,28 +77,28 @@ func (n *Node) propose(target_id int) {
 	while waiting {
 		msg := <-n.Inbox
 		switch msg.Type {
-			case ACCEPT:
-				// Target has accepted our proposal. Yay!
-				if msg.Sender == target_id{
-					n.finalize(target_id)
-					// log
-					return
-				}
-			case PROPOSE:
-				// We both proposed at the same time. Yay!
-				if msg.Sender == target_id {
-					n.finalize(target_id)
-					// log
-					return
-				}
-			case MATCHED:
-				// Remove the neighbor from our neighbor list, it has already matched.
-				delete(n.neighbors, msg.Sender)
+		case ACCEPT:
+			// Target has accepted our proposal. Yay!
+			if msg.Sender == target_id{
+				n.finalize(target_id)
+				// log
+				return
+			}
+		case PROPOSE:
+			// We both proposed at the same time. Yay!
+			if msg.Sender == target_id {
+				n.finalize(target_id)
+				// log
+				return
+			}
+		case MATCHED:
+			// Remove the neighbor from our neighbor list, it has already matched.
+			delete(n.neighbors, msg.Sender)
 
-				if msg.Sender == target_id {
-					// Exit and re evaluate.
-					waiting = false
-				}
+			if msg.Sender == target_id {
+				// Exit and re evaluate.
+				waiting = false
+			}
 		}
 	}
 }
