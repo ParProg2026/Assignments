@@ -117,3 +117,28 @@ func (n *Node) listen() {
 	}
 }
 
+func (n *Node) makePairs() {
+	for p.pair == -1 {
+		if (len(n.neighbors == 0) {
+			n.finalize(n.ID) // We are a single node, pair with ourselves :C
+			return
+		}
+		
+		// We need to find out if we have the highest ID to take priority as proposers.
+		maxNeighborID := -1
+
+		for id := range n.neighbors {
+			if id > maxNeighborID {
+				maxNeighborID = id
+			}
+		}
+		
+		haveMaxId := n.ID > maxNeighborID
+
+		if haveMaxId {
+			p.propose(maxNeighborID)
+		} else {
+			p.listen()
+		}
+	}
+}
