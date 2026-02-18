@@ -103,3 +103,17 @@ func (n *Node) propose(target_id int) {
 	}
 }
 
+func (n *Node) listen() {
+	msg := <-n.Inbox
+
+	switch msg.Type {
+	case PROPOSED:
+		// We are not the node with the highest ID -> we accept any proposal that comes, greedy!
+		n.send(msg.Sender, ACCEPT)
+		n.finalize(msg.Sender)
+	case MATCHED:
+		// We are being notified that the sender has been already matched, so we delete him.
+		delete(n.neighbors, msg.Sender)
+	}
+}
+
