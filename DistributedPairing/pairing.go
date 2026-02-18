@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	"sort"
-
+	"log"
+	"os"
+	"sync"
+	"time"
 )
 
 
@@ -18,6 +20,19 @@ const (
 	MATCHED
 )
 
+func (m MsgType) String() string {
+	switch m {
+	case PROPOSE:
+		return "PROPOSE"
+	case ACCEPT:
+		return "ACCEPT"
+	case MATCHED:
+		return "MATCHED"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 type Message struct {
 	Type	MsgType
 	Sender	int
@@ -31,6 +46,17 @@ type Node struct {
 
 	neighbors	map[int]bool			// Set of active neighbors.
 	pair		int						// The ID of the node I paired with (final result).
+
+	logger		*log.Logger
+}
+
+func keys(m map[int]bool) []int {
+	out := make([]int, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+
+	return out
 }
 
 func InitNode(id int, neighbors []int, inbox chan Message, network map[int]chan Message) *Node {
@@ -40,11 +66,14 @@ func InitNode(id int, neighbors []int, inbox chan Message, network map[int]chan 
 		neighborSet[n] = true
 	}
 
+	log_prefix := fmt.Sprintf("[Node %d] ", id)
+	logger := log.New(os.Stdout, prefix, log.Lmicroseconds)
 	return &Node {
 		ID:			id,
 		Inbox:		inbox,
 		Network:	network,
 		neighbors:	neighborSet,
+		logger: 	logger,
 		pair:		-1,
 	}
 }
@@ -70,6 +99,7 @@ func (n *Node) finalize(partner_id int) {
 }
 
 func (n *Node) propose(target_id int) {
+	n.logger.Printf("Local Highest ID detected. Proposing to node %d...", target_id)
 	n.send(target_id, PROPOSE)
 	
 	// Wait for a response to the proposal
@@ -79,6 +109,7 @@ func (n *Node) propose(target_id int) {
 		switch msg.Type {
 		case ACCEPT:
 			// Target has accepted our proposal. Yay!
+			n.logger.Printf("Node %d accepted my proposal!", target_id)
 			if msg.Sender == target_id{
 				n.finalize(target_id)
 				// log
@@ -87,11 +118,13 @@ func (n *Node) propose(target_id int) {
 		case PROPOSE:
 			// We both proposed at the same time. Yay!
 			if msg.Sender == target_id {
+				n.logger.Printf("Node %d cross-proposed with me!", target_id)
 				n.finalize(target_id)
 				// log
 				return
 			}
 		case MATCHED:
+			n.logger.Printf("Node %d is already MATCHED, removing from neighbors", target_id)
 			// Remove the neighbor from our neighbor list, it has already matched.
 			delete(n.neighbors, msg.Sender)
 
@@ -108,18 +141,22 @@ func (n *Node) listen() {
 
 	switch msg.Type {
 	case PROPOSED:
+		n.logger.Printf("Received PROPOSE from [Node %d], accepting", msg.Sender)
 		// We are not the node with the highest ID -> we accept any proposal that comes, greedy!
 		n.send(msg.Sender, ACCEPT)
 		n.finalize(msg.Sender)
 	case MATCHED:
+		n.logger.Printf("Node %d notified that he has MATCHED, removing from neighbors", msg.Sender)
 		// We are being notified that the sender has been already matched, so we delete him.
 		delete(n.neighbors, msg.Sender)
 	}
 }
 
 func (n *Node) makePairs() {
+	n.logger.Printf("Started. Neighbors: %v", keys(p.neighbors))
 	for p.pair == -1 {
 		if (len(n.neighbors == 0) {
+			n.logger.Printf("No active neighbors. SINGLE Node")
 			n.finalize(n.ID) // We are a single node, pair with ourselves :C
 			return
 		}
