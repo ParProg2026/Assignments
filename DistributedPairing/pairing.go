@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
 )
-
 
 type MsgType int
 
@@ -34,20 +34,20 @@ func (m MsgType) String() string {
 }
 
 type Message struct {
-	Type	MsgType
-	Sender	int
+	Type   MsgType
+	Sender int
 }
 
 // Each node is a process.
 type Node struct {
-	ID			int						// Node ID.
-	Inbox		chan Message			// Incoming read-only messages.
-	Network		map[int]chan Message	// Write-only access to neighbors.
+	ID      int                  // Node ID.
+	Inbox   chan Message         // Incoming read-only messages.
+	Network map[int]chan Message // Write-only access to neighbors.
 
-	neighbors	map[int]bool			// Set of active neighbors.
-	pair		int						// The ID of the node I paired with (final result).
+	neighbors map[int]bool // Set of active neighbors.
+	pair      int          // The ID of the node I paired with (final result).
 
-	logger		*log.Logger
+	logger *log.Logger
 }
 
 func keys(m map[int]bool) []int {
@@ -55,34 +55,35 @@ func keys(m map[int]bool) []int {
 	for k := range m {
 		out = append(out, k)
 	}
-
 	return out
 }
 
 func InitNode(id int, neighbors []int, inbox chan Message, network map[int]chan Message) *Node {
 	neighborSet := make(map[int]bool)
 
-	for _, n:= range neighbors {
+	for _, n := range neighbors {
 		neighborSet[n] = true
 	}
 
 	log_prefix := fmt.Sprintf("[Node %d] ", id)
-	logger := log.New(os.Stdout, prefix, log.Lmicroseconds)
-	return &Node {
-		ID:			id,
-		Inbox:		inbox,
-		Network:	network,
-		neighbors:	neighborSet,
-		logger: 	logger,
-		pair:		-1,
+	logger := log.New(os.Stdout, log_prefix, log.Lmicroseconds)
+
+	return &Node{
+		ID:        id,
+		Inbox:     inbox,
+		Network:   network,
+		neighbors: neighborSet,
+		logger:    logger,
+		pair:      -1,
 	}
 }
 
 func (n *Node) send(to int, typ MsgType) {
+	// Non-blocking send to avoid potential deadlocks if buffers fill up
 	select {
 	case n.Network[to] <- Message{Type: typ, Sender: n.ID}:
 	default:
-		// Channel is full (should never happen), just log it.
+		n.logger.Printf("WARNING: Network channel to Node %d is full!", to)
 	}
 }
 
@@ -95,24 +96,23 @@ func (n *Node) finalize(partner_id int) {
 		if nid != partner_id {
 			n.send(nid, MATCHED)
 		}
-	} 
+	}
 }
 
 func (n *Node) propose(target_id int) {
 	n.logger.Printf("Local Highest ID detected. Proposing to node %d...", target_id)
 	n.send(target_id, PROPOSE)
-	
+
 	// Wait for a response to the proposal
 	waiting := true
-	while waiting {
+	for waiting {
 		msg := <-n.Inbox
 		switch msg.Type {
 		case ACCEPT:
-			// Target has accepted our proposal. Yay!
-			n.logger.Printf("Node %d accepted my proposal!", target_id)
-			if msg.Sender == target_id{
+			if msg.Sender == target_id {
+				// Target has accepted our proposal. Yay!
+				n.logger.Printf("Node %d accepted my proposal!", target_id)
 				n.finalize(target_id)
-				// log
 				return
 			}
 		case PROPOSE:
@@ -120,16 +120,15 @@ func (n *Node) propose(target_id int) {
 			if msg.Sender == target_id {
 				n.logger.Printf("Node %d cross-proposed with me!", target_id)
 				n.finalize(target_id)
-				// log
 				return
 			}
 		case MATCHED:
-			n.logger.Printf("Node %d is already MATCHED, removing from neighbors", target_id)
+			n.logger.Printf("Node %d is already MATCHED, removing from neighbors", msg.Sender)
 			// Remove the neighbor from our neighbor list, it has already matched.
 			delete(n.neighbors, msg.Sender)
 
 			if msg.Sender == target_id {
-				// Exit and re evaluate.
+				// Exit waiting loop and re-evaluate who is the new local max
 				waiting = false
 			}
 		}
@@ -140,7 +139,7 @@ func (n *Node) listen() {
 	msg := <-n.Inbox
 
 	switch msg.Type {
-	case PROPOSED:
+	case PROPOSE:
 		n.logger.Printf("Received PROPOSE from [Node %d], accepting", msg.Sender)
 		// We are not the node with the highest ID -> we accept any proposal that comes, greedy!
 		n.send(msg.Sender, ACCEPT)
@@ -153,14 +152,15 @@ func (n *Node) listen() {
 }
 
 func (n *Node) makePairs() {
-	n.logger.Printf("Started. Neighbors: %v", keys(p.neighbors))
-	for p.pair == -1 {
-		if (len(n.neighbors == 0) {
+	n.logger.Printf("Started. Neighbors: %v", keys(n.neighbors))
+	
+	for n.pair == -1 {
+		if len(n.neighbors) == 0 {
 			n.logger.Printf("No active neighbors. SINGLE Node")
 			n.finalize(n.ID) // We are a single node, pair with ourselves :C
 			return
 		}
-		
+
 		// We need to find out if we have the highest ID to take priority as proposers.
 		maxNeighborID := -1
 
@@ -169,13 +169,13 @@ func (n *Node) makePairs() {
 				maxNeighborID = id
 			}
 		}
-		
+
 		haveMaxId := n.ID > maxNeighborID
 
 		if haveMaxId {
-			p.propose(maxNeighborID)
+			n.propose(maxNeighborID)
 		} else {
-			p.listen()
+			n.listen()
 		}
 	}
 }
