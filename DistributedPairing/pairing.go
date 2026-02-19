@@ -117,13 +117,6 @@ func (n *Node) propose(target_id int) {
 				n.finalize(target_id)
 				return
 			}
-		case PROPOSE:
-			// We both proposed at the same time. Yay!
-			if msg.Sender == target_id {
-				n.logger.Printf("Node %d cross-proposed with me!", target_id)
-				n.finalize(target_id)
-				return
-			}
 		case MATCHED:
 			n.logger.Printf("Node %d is already MATCHED, removing from neighbors", msg.Sender)
 			// Remove the neighbor from our neighbor list, it has already matched.
