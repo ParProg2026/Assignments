@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 	"slices"
+	"strconv"
 )
 
 type MsgType int
@@ -146,7 +147,7 @@ func (n *Node) listen() {
 		n.send(msg.Sender, ACCEPT)
 		n.finalize(msg.Sender)
 	case MATCHED:
-		n.logger.Printf("Node %d notified that he has MATCHED, removing from neighbors", msg.Sender)
+		// n.logger.Printf("Node %d notified that he has MATCHED, removing from neighbors", msg.Sender)
 		// We are being notified that the sender has been already matched, so we delete him.
 		delete(n.neighbors, msg.Sender)
 	}
@@ -180,31 +181,48 @@ func (n *Node) makePairs() {
 		}
 	}
 }
+
 func main() {
-	// Setup random source (math/rand v1 style, widely used)
 	source := rand.NewSource(time.Now().UnixNano())
 	rng := rand.New(source)
 
-	// Configuration
-	numNodes := 22
-	extraEdgesFactor := 7
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: go run pairing.go <N nodes> <E extra edges>")
+		os.Exit(2)
+	} 
+	numNodes, err := strconv.Atoi(os.Args[1])
+	if err != nil {
+		fmt.Println("Error in parsing first argument ", err)
+	}
+
+	extraEdgesFactor, err := strconv.Atoi(os.Args[2])
+	if err != nil {
+		fmt.Println("Error in parsing second argument ", err)
+	}
 
 	// 1. Generate Random Connected Graph
 	adj := make(map[int][]int)
-	
-	// Go 1.22+: 'range' over integer
 	for i := range numNodes {
 		adj[i] = []int{}
 	}
 
-	// Ensure connectivity: Backbone 0-1-2...
-	// Go 1.22+: 'range' over integer expression
+	// Create an array of node IDs and shuffle them
+	shuffledIDs := make([]int, numNodes)
+	for i := range numNodes {
+		shuffledIDs[i] = i
+	}
+	rng.Shuffle(numNodes, func(i, j int) {
+		shuffledIDs[i], shuffledIDs[j] = shuffledIDs[j], shuffledIDs[i]
+	})
+
+	// Ensure connectivity using the shuffled IDs as a continuous backbone
 	for i := range numNodes - 1 {
-		addEdge(adj, i, i+1)
+		u := shuffledIDs[i]
+		v := shuffledIDs[i+1]
+		addEdge(adj, u, v)
 	}
 
 	// Add random edges
-	// Go 1.22+: 'range' without index for simple repetition
 	for range numNodes * extraEdgesFactor {
 		u := rng.Intn(numNodes)
 		v := rng.Intn(numNodes)
@@ -213,63 +231,62 @@ func main() {
 		}
 	}
 
-	fmt.Println("--- Generated Random Graph (Adjacency List) ---")
-	for i := range numNodes {
-		fmt.Printf("Node %d: %v\n", i, adj[i])
-	}
-	fmt.Println("----------------------------------------------")
-
-	// 2. Setup Network Channels
+	// 2. Setup Network
 	network := make(map[int]chan Message)
 	for i := range numNodes {
-		network[i] = make(chan Message, 100)
+		network[i] = make(chan Message, 1000) // Increased buffer for dense graphs
 	}
 
 	// 3. Initialize Nodes
 	var nodes []*Node
 	for i := range numNodes {
-		// InitNode assumed to be defined as in previous context
-		node := InitNode(i, adj[i], network[i], network)
-		nodes = append(nodes, node)
+		nodes = append(nodes, InitNode(i, adj[i], network[i], network))
 	}
 
-	// 4. Run Algorithm concurrently
+	// 4. Run Algorithm
 	var wg sync.WaitGroup
 	wg.Add(numNodes)
 
 	for _, node := range nodes {
-		// Go 1.22+: Loop variables are recreated each iteration.
-		// We no longer need to pass 'node' as an argument to the closure
-		// to avoid the "sharing" bug. It captures the correct instance safely.
 		go func() {
 			defer wg.Done()
 			node.makePairs()
 		}()
 	}
 
-	// 5. Wait for termination
 	wg.Wait()
 
-	// 6. Print and Verify Results
+	// 5. Verification
 	fmt.Println("\n--- Final Results ---")
 	results := make(map[int]int)
-
 	for _, n := range nodes {
 		results[n.ID] = n.pair
 		status := fmt.Sprintf("Paired with %d", n.pair)
 		if n.pair == n.ID {
 			status = "SINGLE"
 		}
+		// Commenting out the mass print to avoid flooding the terminal with 100 lines,
+		// but it's available if you want to inspect specific node states.
 		fmt.Printf("Node %d: %s\n", n.ID, status)
 	}
 
-	// Verification
+	verify(adj, results)
+}
+
+func addEdge(adj map[int][]int, u, v int) {
+	if slices.Contains(adj[u], v) {
+		return
+	}
+	adj[u] = append(adj[u], v)
+	adj[v] = append(adj[v], u)
+}
+
+func verify(adj map[int][]int, results map[int]int) {
 	valid := true
 	for id, pair := range results {
-		if pair == id { // If I am single
+		if pair == id { // If Single
 			for _, neighborID := range adj[id] {
-				neighborPair := results[neighborID]
-				if neighborPair == neighborID {
+				if results[neighborID] == neighborID {
 					fmt.Printf("VIOLATION: Node %d and Neighbor %d are both SINGLE!\n", id, neighborID)
 					valid = false
 				}
@@ -282,13 +299,4 @@ func main() {
 	} else {
 		fmt.Println("\nFAILURE: Algorithm failed verification.")
 	}
-}
-
-// Helper to add undirected edge avoiding duplicates
-func addEdge(adj map[int][]int, u, v int) {
-	if slices.Contains(adj[u], v) {
-		return
-	}
-	adj[u] = append(adj[u], v)
-	adj[v] = append(adj[v], u)
 }
