@@ -1,172 +1,269 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
-	"sync"
-	"time"
 	"slices"
 	"strconv"
+	"sync"
+	"time"
 )
 
+// MsgType defines the intent of a network message.
 type MsgType int
 
 const (
-	// PROPOSE: "I want to pair with you"
 	PROPOSE MsgType = iota
-	// ACCEPT: "I received your proposal, and accepted it"
 	ACCEPT
-	// MATCHED: "I received your proposal, but I am either paired or single."
-	MATCHED
+	MATCHED_MSG
 )
 
+// String representation for JSON serialization.
 func (m MsgType) String() string {
 	switch m {
 	case PROPOSE:
 		return "PROPOSE"
 	case ACCEPT:
 		return "ACCEPT"
-	case MATCHED:
+	case MATCHED_MSG:
 		return "MATCHED"
 	default:
 		return "UNKNOWN"
 	}
 }
 
+// MarshalJSON ensures custom enums serialize to strings.
+func (m MsgType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.String())
+}
+
+// NodeState tracks the algorithm phase for visualization.
+type NodeState string
+
+const (
+	SINGLE   NodeState = "SINGLE"
+	PROPOSER NodeState = "PROPOSER"
+	LISTENER NodeState = "LISTENER"
+	MATCHED  NodeState = "MATCHED"
+)
+
+// Message encapsulates the data sent between nodes.
 type Message struct {
-	Type   MsgType
-	Sender int
+	Type   MsgType `json:"type"`
+	Sender int     `json:"sender"`
+	Target int     `json:"target"`
 }
 
-// Each node is a process.
-type Node struct {
-	ID      int                  // Node ID.
-	Inbox   chan Message         // Incoming read-only messages.
-	Network map[int]chan Message // Write-only access to neighbors.
-
-	neighbors map[int]bool // Set of active neighbors.
-	pair      int          // The ID of the node I paired with (final result).
-
-	logger *log.Logger
+// Event represents a single atomic occurrence in the simulation.
+type Event struct {
+	Timestamp int64     `json:"timestamp"`
+	Type      string    `json:"type"` 
+	Node      int       `json:"node"` 
+	State     NodeState `json:"state,omitempty"`
+	Msg       *Message  `json:"msg,omitempty"`
+	Partner   int       `json:"partner"` 
+	Nodes     []int     `json:"nodes,omitempty"`
+	Edges     [][2]int  `json:"edges,omitempty"`
 }
 
-func keys(m map[int]bool) []int {
-	out := make([]int, 0, len(m))
-	for k := range m {
-		out = append(out, k)
+// EventRecorder acts as a synchronized sink for all simulation events.
+type EventRecorder struct {
+	EventChan chan Event
+	DoneChan  chan bool
+	file      *os.File
+}
+
+// NewEventRecorder initializes the JSON file and starts the listening goroutine.
+func NewEventRecorder(filename string) *EventRecorder {
+	f, err := os.Create(filename)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create event log: %v", err))
 	}
-	return out
+	f.WriteString("[\n")
+
+	rec := &EventRecorder{
+		EventChan: make(chan Event, 5000),
+		DoneChan:  make(chan bool),
+		file:      f,
+	}
+
+	go rec.listen()
+	return rec
 }
 
-func InitNode(id int, neighbors []int, inbox chan Message, network map[int]chan Message) *Node {
-	neighborSet := make(map[int]bool)
+// listen sequentially writes events to disk to prevent interleaving.
+func (r *EventRecorder) listen() {
+	first := true
+	for ev := range r.EventChan {
+		data, _ := json.Marshal(ev)
+		if !first {
+			r.file.WriteString(",\n")
+		}
+		r.file.Write(data)
+		first = false
+	}
+	r.file.WriteString("\n]\n")
+	r.file.Close()
+	r.DoneChan <- true
+}
 
+// Record queues an event with an automatic nanosecond timestamp.
+func (r *EventRecorder) Record(ev Event) {
+	ev.Timestamp = time.Now().UnixNano()
+	r.EventChan <- ev
+}
+
+// Close signals the recorder to finish writing and flush to disk.
+func (r *EventRecorder) Close() {
+	close(r.EventChan)
+	<-r.DoneChan
+}
+
+// Node represents an independent concurrent process in the graph.
+type Node struct {
+	ID        int                  
+	State     NodeState            
+	Inbox     chan Message         
+	Network   map[int]chan Message 
+	neighbors map[int]bool         
+	pair      int                  
+	recorder  *EventRecorder       
+}
+
+// InitNode provisions a new Node with its initial topology.
+func InitNode(id int, neighbors []int, inbox chan Message, network map[int]chan Message, rec *EventRecorder) *Node {
+	neighborSet := make(map[int]bool)
 	for _, n := range neighbors {
 		neighborSet[n] = true
 	}
 
-	log_prefix := fmt.Sprintf("[Node %d] ", id)
-	logger := log.New(os.Stdout, log_prefix, log.LUTC)
-
 	return &Node{
 		ID:        id,
+		State:     SINGLE,
 		Inbox:     inbox,
 		Network:   network,
 		neighbors: neighborSet,
-		logger:    logger,
 		pair:      id,
+		recorder:  rec,
 	}
 }
 
+// simulateNetworkLatency introduces a brief block to mimic real network propagation,
+// forcing concurrent events to cluster temporally for the visualizer.
+func simulateNetworkLatency() {
+	// 50ms is enough to create distinct temporal windows without dragging the simulation.
+	time.Sleep(50 * time.Millisecond)
+}
+
+// changeState safely updates the node's state and logs the transition.
+func (n *Node) changeState(newState NodeState) {
+	if n.State != newState {
+		n.State = newState
+		n.recorder.Record(Event{
+			Type:  "STATE_CHANGE",
+			Node:  n.ID,
+			State: newState,
+		})
+	}
+}
+
+// send issues a non-blocking message to a target node with simulated latency.
 func (n *Node) send(to int, typ MsgType) {
-	// Non-blocking send to avoid potential deadlocks if buffers fill up
+	simulateNetworkLatency()
+	msg := Message{Type: typ, Sender: n.ID, Target: to}
 	select {
-	case n.Network[to] <- Message{Type: typ, Sender: n.ID}:
+	case n.Network[to] <- msg:
+		n.recorder.Record(Event{
+			Type: "MSG_SENT",
+			Node: n.ID,
+			Msg:  &msg,
+		})
 	default:
-		n.logger.Printf("WARNING: Network channel to Node %d is full!", to)
+		// Drop message if channel is full to prevent absolute deadlock.
 	}
 }
 
-func (n *Node) finalize(partner_id int) {
-	// Save partner id in pair.
-	n.pair = partner_id
+// finalize registers a successful pairing and notifies remaining neighbors.
+func (n *Node) finalize(partnerID int) {
+	n.pair = partnerID
+	n.changeState(MATCHED)
 
-	// Notify all the other neighbors of the new pair.
+	n.recorder.Record(Event{
+		Type:    "MATCHED",
+		Node:    n.ID,
+		Partner: partnerID,
+	})
+
 	for nid := range n.neighbors {
-		if nid != partner_id {
-			n.send(nid, MATCHED)
+		if nid != partnerID {
+			n.send(nid, MATCHED_MSG)
 		}
 	}
 }
 
-func (n *Node) propose(target_id int) {
-	n.logger.Printf("Local Highest ID detected. Proposing to node %d...", target_id)
-	n.send(target_id, PROPOSE)
+// propose attempts to pair with the specified high-priority target.
+func (n *Node) propose(targetID int) {
+	n.changeState(PROPOSER)
+	n.send(targetID, PROPOSE)
 
-	// Wait for a response to the proposal
 	waiting := true
 	for waiting {
 		msg := <-n.Inbox
+		simulateNetworkLatency() // Mimic processing time
+		n.recorder.Record(Event{Type: "MSG_RECV", Node: n.ID, Msg: &msg})
+
 		switch msg.Type {
 		case ACCEPT:
-			if msg.Sender == target_id {
-				// Target has accepted our proposal. Yay!
-				n.logger.Printf("Node %d accepted my proposal!", target_id)
-				n.finalize(target_id)
+			if msg.Sender == targetID {
+				n.finalize(targetID)
 				return
 			}
-		case MATCHED:
-			n.logger.Printf("Node %d is already MATCHED, removing from neighbors", msg.Sender)
-			// Remove the neighbor from our neighbor list, it has already matched.
+		case MATCHED_MSG:
 			delete(n.neighbors, msg.Sender)
-
-			if msg.Sender == target_id {
-				// Exit waiting loop and re-evaluate who is the new local max
+			if msg.Sender == targetID {
 				waiting = false
 			}
+		case PROPOSE:
+			// Ignore proposals while actively waiting for a response to our own.
 		}
 	}
 }
 
+// listen waits for incoming proposals and greedily accepts the first valid one.
 func (n *Node) listen() {
+	n.changeState(LISTENER)
+
 	msg := <-n.Inbox
+	simulateNetworkLatency() // Mimic processing time
+	n.recorder.Record(Event{Type: "MSG_RECV", Node: n.ID, Msg: &msg})
 
 	switch msg.Type {
 	case PROPOSE:
-		n.logger.Printf("Received PROPOSE from [Node %d], accepting", msg.Sender)
-		// We are not the node with the highest ID -> we accept any proposal that comes, greedy!
 		n.send(msg.Sender, ACCEPT)
 		n.finalize(msg.Sender)
-	case MATCHED:
-		// n.logger.Printf("Node %d notified that he has MATCHED, removing from neighbors", msg.Sender)
-		// We are being notified that the sender has been already matched, so we delete him.
+	case MATCHED_MSG:
 		delete(n.neighbors, msg.Sender)
 	}
 }
 
+// makePairs executes the core maximal matching algorithm.
 func (n *Node) makePairs() {
-	n.logger.Printf("Started. Neighbors: %v", keys(n.neighbors))
-	
 	for n.pair == n.ID {
 		if len(n.neighbors) == 0 {
-			n.logger.Printf("No active neighbors. SINGLE Node")
+			n.changeState(SINGLE)
 			return
 		}
 
-		// We need to find out if we have the highest ID to take priority as proposers.
 		maxNeighborID := -1
-
 		for id := range n.neighbors {
 			if id > maxNeighborID {
 				maxNeighborID = id
 			}
 		}
 
-		haveMaxId := n.ID > maxNeighborID
-
-		if haveMaxId {
+		if n.ID > maxNeighborID {
 			n.propose(maxNeighborID)
 		} else {
 			n.listen()
@@ -174,121 +271,93 @@ func (n *Node) makePairs() {
 	}
 }
 
-func main() {
-	source := rand.NewSource(time.Now().UnixNano())
-	rng := rand.New(source)
-
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: go run pairing.go <N nodes> <E extra edges>")
-		os.Exit(2)
-	} 
-	numNodes, err := strconv.Atoi(os.Args[1])
-	if err != nil {
-		fmt.Println("Error in parsing first argument ", err)
-	}
-
-	extraEdgesFactor, err := strconv.Atoi(os.Args[2])
-	if err != nil {
-		fmt.Println("Error in parsing second argument ", err)
-	}
-
-	// 1. Generate Random Connected Graph
+// GenerateGraph creates a connected graph with additional random edges.
+func GenerateGraph(numNodes int, extraEdges int) map[int][]int {
 	adj := make(map[int][]int)
-	for i := range numNodes {
+	for i := 0; i < numNodes; i++ {
 		adj[i] = []int{}
 	}
 
-	// Create an array of node IDs and shuffle them
 	shuffledIDs := make([]int, numNodes)
 	for i := range numNodes {
 		shuffledIDs[i] = i
 	}
-	rng.Shuffle(numNodes, func(i, j int) {
+	rand.Shuffle(numNodes, func(i, j int) {
 		shuffledIDs[i], shuffledIDs[j] = shuffledIDs[j], shuffledIDs[i]
 	})
 
-	// Ensure connectivity using the shuffled IDs as a continuous backbone
-	for i := range numNodes - 1 {
-		u := shuffledIDs[i]
-		v := shuffledIDs[i+1]
-		addEdge(adj, u, v)
-	}
-
-	// Add random edges
-	for range numNodes * extraEdgesFactor {
-		u := rng.Intn(numNodes)
-		v := rng.Intn(numNodes)
-		if u != v {
-			addEdge(adj, u, v)
+	addEdge := func(u, v int) {
+		if u == v || slices.Contains(adj[u], v) {
+			return
 		}
+		adj[u] = append(adj[u], v)
+		adj[v] = append(adj[v], u)
 	}
 
-	// 2. Setup Network
-	network := make(map[int]chan Message)
-	for i := range numNodes {
-		network[i] = make(chan Message, 1000) // Increased buffer for dense graphs
+	for i := 0; i < numNodes-1; i++ {
+		addEdge(shuffledIDs[i], shuffledIDs[i+1])
 	}
-
-	// 3. Initialize Nodes
-	var nodes []*Node
-	for i := range numNodes {
-		nodes = append(nodes, InitNode(i, adj[i], network[i], network))
+	for i := 0; i < extraEdges; i++ {
+		addEdge(rand.Intn(numNodes), rand.Intn(numNodes))
 	}
-
-	// 4. Run Algorithm
-	var wg sync.WaitGroup
-	wg.Add(numNodes)
-
-	for _, node := range nodes {
-		go func() {
-			defer wg.Done()
-			node.makePairs()
-		}()
-	}
-
-	wg.Wait()
-
-	// 5. Verification
-	fmt.Println("\n--- Final Results ---")
-	results := make(map[int]int)
-	for _, n := range nodes {
-		results[n.ID] = n.pair
-		status := fmt.Sprintf("Paired with %d", n.pair)
-		if n.pair == n.ID {
-			status = "SINGLE"
-		}
-		// Commenting out the mass print to avoid flooding the terminal with 100 lines,
-		// but it's available if you want to inspect specific node states.
-		fmt.Printf("Node %d: %s\n", n.ID, status)
-	}
-
-	verify(adj, results)
+	return adj
 }
 
-func addEdge(adj map[int][]int, u, v int) {
-	if slices.Contains(adj[u], v) {
-		return
-	}
-	adj[u] = append(adj[u], v)
-	adj[v] = append(adj[v], u)
-}
+func main() {
+	rand.Seed(time.Now().UnixNano())
 
-func verify(adj map[int][]int, results map[int]int) {
-	valid := true
-	for id, pair := range results {
-		if pair == id { // If Single
-			for _, neighborID := range adj[id] {
-				if results[neighborID] == neighborID {
-					fmt.Printf("VIOLATION: Node %d and Neighbor %d are both SINGLE!\n", id, neighborID)
-					valid = false
-				}
+	if len(os.Args) < 3 {
+		fmt.Println("Usage: go run main.go <N nodes> <E extra edges>")
+		os.Exit(2)
+	}
+
+	numNodes, _ := strconv.Atoi(os.Args[1])
+	extraEdgesFactor, _ := strconv.Atoi(os.Args[2])
+	extraEdges := numNodes * extraEdgesFactor
+
+	recorder := NewEventRecorder("simulation_events.json")
+	adj := GenerateGraph(numNodes, extraEdges)
+
+	var edges [][2]int
+	nodes := make([]int, numNodes)
+	for u, neighbors := range adj {
+		nodes[u] = u
+		for _, v := range neighbors {
+			if u < v {
+				edges = append(edges, [2]int{u, v})
 			}
 		}
 	}
+	
+	// Record initialization topology. 
+	recorder.Record(Event{
+		Type:  "INIT",
+		Nodes: nodes,
+		Edges: edges,
+	})
 
-	if valid {
-		fmt.Println("\nSUCCESS: Algorithm terminated correctly (Maximal Matching).")
-	} else {
-		fmt.Println("\nFAILURE: Algorithm failed verification.")
+	network := make(map[int]chan Message)
+	for i := 0; i < numNodes; i++ {
+		network[i] = make(chan Message, 1000)
 	}
+
+	var nodeInstances []*Node
+	for i := 0; i < numNodes; i++ {
+		nodeInstances = append(nodeInstances, InitNode(i, adj[i], network[i], network, recorder))
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(numNodes)
+
+	for _, node := range nodeInstances {
+		go func(n *Node) {
+			defer wg.Done()
+			n.makePairs()
+		}(node)
+	}
+
+	wg.Wait()
+	recorder.Close()
+
+	fmt.Println("Simulation complete. Event log written to 'simulation_events.json'.")
 }
