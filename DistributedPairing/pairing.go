@@ -76,7 +76,7 @@ func InitNode(id int, neighbors []int, inbox chan Message, network map[int]chan 
 		Network:   network,
 		neighbors: neighborSet,
 		logger:    logger,
-		pair:      -1,
+		pair:      id,
 	}
 }
 
@@ -156,10 +156,9 @@ func (n *Node) listen() {
 func (n *Node) makePairs() {
 	n.logger.Printf("Started. Neighbors: %v", keys(n.neighbors))
 	
-	for n.pair == -1 {
+	for n.pair == n.ID {
 		if len(n.neighbors) == 0 {
 			n.logger.Printf("No active neighbors. SINGLE Node")
-			n.finalize(n.ID) // We are a single node, pair with ourselves :C
 			return
 		}
 
