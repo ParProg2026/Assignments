@@ -144,10 +144,10 @@ func (n *Node) propose(target_id) {
 				return
 			}
 		case MATCHED:
-			// Remove the neighbor from our neighbor list, it has already matched.
+			// Remove the neighbor from our list, it has already matched.
 			delete(n.neighbors, msg.Sender)
 			if msg.Sender == target_id {
-				// Exit waiting loop and re-evaluate who is the new local max
+				// Exit waiting loop and re-evaluate who is the local max
 				waiting = false
 			}
 		}
@@ -161,15 +161,17 @@ func (n *Node) listen() {
 
 	switch msg.Type {
 	case PROPOSE:
-		// We are not the node with the highest ID -> we accept any proposal that comes, greedy!
+		// We greedily accept any proposal that comes.
 		n.send(msg.Sender, ACCEPT)
 		n.finalize(msg.Sender)
 	case MATCHED:
-		// We are being notified that the sender has been already matched, so we delete him.
+		// The sender has been already matched, so we delete it.
 		delete(n.neighbors, msg.Sender)
 	}
 }
 \end{lstlisting}
+
+\newpage
 
 \begin{lstlisting}[caption=Distributed Pairing - Make pairs, language=go, label=E]
 func (n *Node) makePairs() {
@@ -202,7 +204,40 @@ func (n *Node) makePairs() {
 \section*{3. Argument of Correctness}
 % You demonstrate that the no two neighbouring nodes are single 
 % if the algorithm terminates
+When the algorithm terminates, there are no adjacent nodes marked as \texttt{SINGLE}. 
+This partial correctness can be proven by analyzing the precise conditions under which 
+a node definitively terminates in the \texttt{SINGLE} state.
 
+Upon initialization, every node $u$ assumes the \texttt{SINGLE} state by default, setting \texttt{u.pair = u.ID}. 
+The process continues to execute its main loop as long as this state remains unchanged 
+(i.e., \texttt{for n.pair == n.ID} \tiny{(Listing \ref{E} line 3)}\normalsize).
+
+A node $u$ definitively terminates as \texttt{SINGLE} only if it satisfies the condition: 
+\texttt{len(n.neighbors) == 0} \tiny{(Listing \ref{E} line 4)}\normalsize. 
+When this occurs, the node executes a \texttt{return} statement and halts 
+\tiny{(Listing \ref{E} line 6)}\normalsize. 
+Crucially, because it halts immediately without invoking the \texttt{finalize} routine, 
+a node terminating as \texttt{SINGLE} never broadcasts a \texttt{MATCHED} message to the network.
+
+Let's assume that two initially adjacent nodes $u$ and $v$ both terminate as \texttt{SINGLE}.
+For node $u$ to terminate as \texttt{SINGLE}, its \texttt{neighbors} map must have become empty. 
+Since the graph is undirected, $v$ was present in $u$'s map at initialization. 
+Therefore, $v$ must have been explicitly removed from $u$'s map during execution.
+
+According to the algorithm's event handling, a neighbor is deleted from the map 
+if and only if a \texttt{MATCHED} message is received from that specific neighbor 
+\tiny{(Listing \ref{D} line 11)}\normalsize. 
+Thus, $u$ must have received a \texttt{MATCHED} message from $v$.However, as established, 
+if $v$ terminates as \texttt{SINGLE}, it halts without ever sending a \texttt{MATCHED} message. 
+For $v$ to have sent a \texttt{MATCHED} message to $u$, $v$ must have successfully 
+paired with some other node $w$ (where $w \neq v$) and executed the \texttt{finalize(w)} routine.
+
+If $v$ paired with $w$, its local state was updated such that \texttt{v.pair = w} 
+$\implies$ \texttt{v.pair} $\neq$ \texttt{v.ID}. 
+Consequently, $v$ did not terminate as \texttt{SINGLE} and exited its \texttt{makePairs} 
+loop \tiny{(Listing \ref{E} line 3)}\normalsize. 
+This fundamentally contradicts our initial assumption. Therefore, it is impossible 
+for two adjacent nodes to both evaluate empty neighbor maps and terminate as \texttt{SINGLE}.
 \section*{4. Termination}
 % You give a convincing argument that your algorithm terminates. Reference the code.
 
