@@ -66,13 +66,139 @@
 \section*{1. Description of the Solution}
 % You describe the algorithm, use the proper communication methods, 
 % and use the specified shared variables for the result.
+To solve the Distributed Pairing problem, we implement an iterative, priority-based, greedy algorithm.
+The basic idea behind the developed algorithm is to create a local hierarchy of nodes inside a group of
+neighbouring nodes.
 
+Using asyncrhronous messaging through buffered channels, we avoid the use of shared memory. \\
+The possible messages in our system are defined as:
+\begin{enumerate}
+    \item \textbf{\texttt{PROPOSE}:} The sender is asking to pair with the receiver
+    \item \textbf{\texttt{ACCEPT}:} The sender is accepting the proposal of the receiver, forming a pair
+    \item \textbf{\texttt{MATCHED}:} The sender is communicating it has formed a pair with another node.
+\end{enumerate}
+Each node has its own state machine, that acts as follows:
+\begin{enumerate}
+    \item Each \texttt{Node} is initialized as \texttt{SINGLE} (i.e. its \texttt{pair} variable 
+    is initialized to the node's ID.), and with a list of its \emph{neighbors}\tiny{(Listing \ref{A} - lines 9-13)}\normalsize.
+    \item At each iteration the \texttt{Node} evaulates its position relative to its neighbors\tiny{(Listing \ref{E} - lines 20-24)}\normalsize\:
+          \begin{itemize}
+              \item If it has the highest \texttt{ID}, it assumes the role of \texttt{proposer}
+              \item Otherwise, it acts as a \texttt{listener}
+          \end{itemize}
+    \item \emph{Proposer:}  Sends a \texttt{PROPOSE} message to its highest-ID neighbor, and waits for a response
+                            (Either an \texttt{ACCEPT} or a \texttt{MATCHED} response)\tiny{(Listing \ref{C})}\normalsize.
+    \item \emph{Listener:}  Waits for incoming messages, greedily accepting the first incoming proposal, as it is 
+                            guaranteed to come from a higher-priority node\tiny{(Listing \ref{D})}\normalsize.
+    \item   Once a pair is formed, both the nodes set their \texttt{pair} variable to the respective IDs, and broadcast 
+            a \texttt{MATCHED} message to all their active neighbors and terminate\tiny{(Listings \ref{C} - line 12; \ref{D} - line 8)}\normalsize.\\
+            If a node receives a \texttt{MATCHED} message from a neighbor, it will remove the ID of the sender from its 
+            \texttt{neighbors} list\tiny{(Listings \ref{C} - line 15, \ref{D} - line 9)}\normalsize.
+    \item   If a node's \texttt{neighbors} list is empty, it is marked as \texttt{SINGLE} and terminates\tiny{(Listing \ref{E} - lines 4-7)}\normalsize.
+\end{enumerate}
 \section*{2. Proposed Pseudocode}
-\begin{lstlisting}[caption=Generalized 3-Process Mutual Exclusion]
-// Enter your pseudocode here.
-// Use the flag logic (Copier/Inverter) for Alice, Bob, and Charlie.
+\begin{lstlisting}[caption=Distributed Pairing - Node initialization,language=go,label=A]
+func InitNode(id, neighbors[], inbox, network) {
+	neighborSet := make(map[int]bool)
+
+	for _, n := range neighbors {
+		neighborSet[n] = true
+	}
+
+	return &Node{
+		ID:        id,
+		Inbox:     inbox,
+		Network:   network,
+		neighbors: neighborSet,
+		pair:      id,
+	}
+}
 \end{lstlisting}
 
+\begin{lstlisting}[caption=Distributed Pairing - Pair finalization, language=go, label=B]
+func (n *Node) finalize(partner_id) {
+	// Save partner id in pair.
+	n.pair = partner_id
+
+	// Notify all the other neighbors of the new pair.
+	for nid := range n.neighbors {
+		if nid != partner_id {
+			n.send(nid, MATCHED)
+		}
+	}
+}\end{lstlisting}
+
+\newpage
+\begin{lstlisting}[caption=Distributed Pairing - Proposer, language=go, label=C]
+func (n *Node) propose(target_id) {
+	n.send(target_id, PROPOSE)
+	// Wait for a response to the proposal
+	waiting := true
+	while waiting {
+		msg := <-n.Inbox
+		switch msg.Type {
+		case ACCEPT:
+			if msg.Sender == target_id {
+				// Target has accepted our proposal. Yay!
+				n.finalize(target_id)
+				return
+			}
+		case MATCHED:
+			// Remove the neighbor from our neighbor list, it has already matched.
+			delete(n.neighbors, msg.Sender)
+			if msg.Sender == target_id {
+				// Exit waiting loop and re-evaluate who is the new local max
+				waiting = false
+			}
+		}
+	}
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption=Distributed Pairing - Listener, language=go, label=D]
+func (n *Node) listen() {
+	msg := <-n.Inbox
+
+	switch msg.Type {
+	case PROPOSE:
+		// We are not the node with the highest ID -> we accept any proposal that comes, greedy!
+		n.send(msg.Sender, ACCEPT)
+		n.finalize(msg.Sender)
+	case MATCHED:
+		// We are being notified that the sender has been already matched, so we delete him.
+		delete(n.neighbors, msg.Sender)
+	}
+}
+\end{lstlisting}
+
+\begin{lstlisting}[caption=Distributed Pairing - Make pairs, language=go, label=E]
+func (n *Node) makePairs() {
+	
+	for n.pair == n.ID {
+		if len(n.neighbors) == 0 {
+            // SINGLE node.
+			return
+		}
+
+		// We need to find out if we have the highest ID to take priority.
+		maxNeighborID := -1
+
+		for id := range n.neighbors {
+			if id > maxNeighborID {
+				maxNeighborID = id
+			}
+		}
+
+		haveMaxId := n.ID > maxNeighborID
+
+		if haveMaxId {
+			n.propose(maxNeighborID)
+		} else {
+			n.listen()
+		}
+	}
+}
+\end{lstlisting}
 \section*{3. Argument of Correctness}
 % You demonstrate that the no two neighbouring nodes are single 
 % if the algorithm terminates
