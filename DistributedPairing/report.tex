@@ -54,17 +54,18 @@
 \begin{document}
 
 \begin{center}
-\vspace{2ex}
-{\huge \textsc{Tournament Algorithm: 3-Process Solution}}
-\vspace{1ex}
-\\
-\linia\\
-Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl \hfill \today % Replace with your name
-\vspace{4ex}
+    \vspace{2ex}
+    {\huge \textsc{Distributed Pairing}}
+    \vspace{1ex}
+    \\
+    \linia\\
+    Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl \hfill \today
+    \vspace{4ex}
 \end{center}
 
 \section*{1. Description of the Solution}
-% Describe your solution here (100-300 words).
+% You describe the algorithm, use the proper communication methods, 
+% and use the specified shared variables for the result.
 
 \section*{2. Proposed Pseudocode}
 \begin{lstlisting}[caption=Generalized 3-Process Mutual Exclusion]
@@ -73,5 +74,12 @@ Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl \hfill \today % Re
 \end{lstlisting}
 
 \section*{3. Argument of Correctness}
+% You demonstrate that the no two neighbouring nodes are single 
+% if the algorithm terminates
 
+\section*{4. Termination}
+% You give a convincing argument that your algorithm terminates. Reference the code.
+
+\section*{5. Cooperation}
+% You give a convincing algorithm that no node waits for messages that are never sent.
 \end{document}
