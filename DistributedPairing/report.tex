@@ -24,7 +24,7 @@
 \lhead{}
 \chead{}
 \rhead{}
-\lfoot{Assignment Report}
+\lfoot{Distributed Pairing Report}
 \cfoot{}
 \rfoot{Page \thepage}
 \renewcommand{\headrulewidth}{0pt}
@@ -240,7 +240,52 @@ This fundamentally contradicts our initial assumption. Therefore, it is impossib
 for two adjacent nodes to both evaluate empty neighbor maps and terminate as \texttt{SINGLE}.
 \section*{4. Termination}
 % You give a convincing argument that your algorithm terminates. Reference the code.
+The main loop of the algorithm runs as long as a node remains unpaired (i.e., \texttt{for n.pair == n.ID} 
+\tiny{(Listing \ref{E} line 3)}\normalsize).
+At each iteration, the \texttt{Node} evaluates its position relative to its active neighbors. 
+Because the graph is finite and all nodes have strictly unique IDs, there is guaranteed to be 
+at least one global maximum ID within any active connected component.
 
+If a node has the highest \texttt{ID} among its neighbors, it assumes the role of 
+proposer \tiny{(Listing \ref{E} lines 20-21)}\normalsize.
+This proposer sends a \texttt{PROPOSE} message to its highest-ID neighbor, and waits for a 
+response \tiny{(Listing \ref{C} line 2)}\normalsize.
+Since the receiving neighbor has a lower ID than the proposer, it cannot be a local maximum, 
+meaning it must be into the listener state \tiny{(Listing \ref{E} line 23)}\normalsize.
+A listener waits for incoming messages, greedily accepting the first incoming proposal 
+\tiny{(Listing \ref{D} lines 6-7)}\normalsize.
+Once a pair is formed, both the nodes set their \texttt{pair} variable to the respective IDs, 
+broadcast a \texttt{MATCHED} message to all active neighbors, and terminate 
+\tiny{(Listings \ref{C} line 12; \ref{D} line 8)}\normalsize.
+
+Because at least one global maximum node exists in any non-empty active graph, at least one pair is guaranteed to form in every iteration. This strictly decreases the number of active nodes in the network. Eventually, all nodes will either pair up or find themselves with an empty \texttt{neighbors} list, mark themselves as \texttt{SINGLE} \tiny{(Listing \ref{E} lines 4-6)}\normalsize, and terminate. Thus, the algorithm strictly avoids infinite loops.
 \section*{5. Cooperation}
 % You give a convincing algorithm that no node waits for messages that are never sent.
+For the algorithm to be cooperative, we must guarantee that no node enters a state where it waits 
+indefinitely for messages that are never sent. This can be demonstrated by analyzing the waiting states:
+
+\begin{itemize}
+    \item The proposer waits for either an \texttt{ACCEPT} 
+    or a \texttt{MATCHED} response \tiny{(Listing \ref{C} lines 4-6)}\normalsize. 
+    It waits specifically for a response from its \texttt{target\_id}. 
+    Because the proposer is a local maximum, its ID is strictly greater than \texttt{target\_id}. 
+    Consequently, \texttt{target\_id} cannot be a local maximum and must be executing the 
+    \texttt{listen()} routine. 
+    A listener greedily accepts the first incoming proposal, as it is guaranteed 
+    to come from a higher-priority node \tiny{(Listing \ref{D} line 6)}\normalsize. 
+    If the listener had already processed a prior proposal, it would have broadcasted 
+    a \texttt{MATCHED} message. In either scenario, a message (\texttt{ACCEPT} or \texttt{MATCHED}) 
+    is definitively sent back to the proposer, breaking its waiting loop.
+    
+    \item A listener blocks on \texttt{<-n.Inbox} 
+    waiting for any message \tiny{(Listing \ref{D} line 2)}\normalsize. 
+    Because a listener is not a local maximum, it inherently points towards a 
+    neighbor with a higher ID. 
+    Following this chain guarantees reaching a local maximum node, which is actively proposing. 
+    As established in the termination argument, the active network strictly shrinks as pairs form. 
+    The listener will inevitably receive either a \texttt{PROPOSE} from a higher-priority node, 
+    or \texttt{MATCHED} messages from its neighbors until its map is empty.
+\end{itemize}
+
+Finally, note that a proposer only handles \texttt{ACCEPT} and \texttt{MATCHED} messages \tiny{(Listing \ref{C} lines 7-22)}\normalsize. This is safe and cooperative because a proposer holds a local maximum ID; therefore, no active neighbor can view it as a valid proposal target. Consequently, a proposer will never be sent a \texttt{PROPOSE} message while waiting, eliminating the risk of unhandled message deadlocks.
 \end{document}
