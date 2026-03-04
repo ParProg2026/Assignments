@@ -1,0 +1,97 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+% --- Font Settings ---
+\renewcommand\familydefault{\sfdefault}
+\usepackage{tgheros}
+% zi4 is a high-quality, professional monospaced font available in almost all distributions
+\usepackage[varqu]{zi4} 
+
+\usepackage{amsmath,amssymb,amsthm,textcomp}
+\usepackage{geometry}
+\geometry{left=25mm,right=25mm, top=20mm,bottom=20mm}
+
+\linespread{1.3}
+\newcommand{\linia}{\rule{\linewidth}{0.5pt}}
+
+% --- Header and Footer ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{Assignment Report}
+\cfoot{}
+\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% --- Code Listing Settings ---
+\usepackage{listings}
+\lstset{
+    language=Go,
+    basicstyle=\ttfamily\small,
+    aboveskip={1.0\baselineskip},
+    belowskip={1.0\baselineskip},
+    columns=fixed,
+    extendedchars=true,
+    breaklines=true,
+    tabsize=4,
+    frame=lines,
+    keywordstyle=\color[rgb]{0.627,0.126,0.941},
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\color[rgb]{0,0,0},
+    numbers=left,
+    numberstyle=\small,
+    stepnumber=1,
+    numbersep=10pt,
+    captionpos=t
+}
+
+\begin{document}
+
+\begin{center}
+\vspace{2ex}
+{\huge \textsc{Consistency requirements of games}}
+\vspace{1ex}
+\\
+\linia\\
+Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl \hfill \today % Replace with your name
+\vspace{4ex}
+\end{center}
+
+\section*{Envisage a multi-user game where players move figures around a common scene. The state of the game is replicated at the players’ workstations and a server. The server contains services controlling the game, such as collision detection. Updates are multicast to all replicas. Consider the following conditions:}
+% Describe your solution here (100-300 words).
+
+\section*{1. The figures may throw projectiles at one another, and a hit debilitates the unfortunate recipient for a limited time. What type of update order is required here? Consider the ‘throw’, ‘collide’ and ‘revive’ events.}
+\begin{lstlisting}[caption=Causal ordering of actions as seen by server and clients]
+P1: W(throw1)                      R(hit2)              R(revive2)
+P2:                                R(hit2)              R(revive2)
+S:             R(throw1)  W(hit2)           W(revive2)
+\end{lstlisting}
+The events form the causal chain:
+
+\[
+throw1 \rightarrow hit2 \rightarrow revive2
+\]
+The chain of events can be demonstrated with causal consistency ordering. $P1$ throws at $P2$ the server reads the throw, and multi-casts to all players that $P2$ has been hit. Some time later, the server revives $P2$ and multi-casts the information to all players. No process can read a hit preceding a throw and no revive preceding a hit. Note that not every throw leads to a hit, and not every hit leads to a revive, but hits are causally dependent on a throw and revives are causally dependent on a hit.
+Independent throws by different players are concurrent, and do not need to be observed in the same order in all processes.
+
+
+\newpage
+\section*{2. The game incorporates magic devices a player may pick up to assist them. What type of order should be applied to the ‘pickup-device’ operation?}
+\begin{lstlisting}[caption=Total ordering of actions as seen by server and clients]
+P1: W(pickup)a                                    R(give)a
+P2: W(pickup)b                                    R(give)a
+S:              R(pickup)a  R(pickup)b  W(give)a
+\end{lstlisting}
+Two players concurrently attempt to pickup the same item. Since an item can only be owned by a single player, the system must ensure all players agree on who picked up the item first. The pickup must therefore be totally ordered. A total order guarantees every player observes pickup events in the same sequence. The server orders events as:
+\[
+(pickup)a \rightarrow (pickup)b
+\]
+The server reads pickups a and b from both players and orders that player 1 was the first to pickup. The server broadcasts to all players that player 1 has the item. The second player's request fails, since the item has already been assigned. This ensures all replicas of the game state remain consistent.
+
+\end{document}
