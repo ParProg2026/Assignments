@@ -86,57 +86,56 @@ increments its current \texttt{term number}, votes for itself, and broadcasts
 \texttt{RequestVote} RPCs to the other servers in the cluster \cite{184040,tanenbaum2007distributed}.
 
 \subsection{Processing Vote Requests}
-Normally, a \texttt{RequestVote} RPC contains the candidate's \texttt{lastLogIndex} 
-and \texttt{lastLogTerm} to allow voters to determine which candidate's log is 
+Normally, a \texttt{RequestVote} RPC contains the Candidate's \texttt{lastLogIndex} 
+and \texttt{lastLogTerm} to allow voters to determine which Candidate's log is 
 more up-to-date \cite{184040}.
 However, the assignment description specifies that \textit{"all AppendEntries RPC
 carry empty log messages and no node ever appends anything to its log"}.
 In this particular case, the evaluation of the \texttt{RequestVote} RPC will be
-based only on the \texttt{term number}, rejecting the request if the candidate's
+based only on the \texttt{term number}, rejecting the request if the Candidate's
 term is lower than its own, and giving the vote if it has not already voted in
 the current term \cite{tanenbaum2007distributed}.
 
 \section{Election Mechanics with Empty Logs}
-So in this case the leader election follows a first-come-first-served logic,
-based on \texttt{term numbers}.
-The Raft protocol dictates that a candidate may only be elected if its log
+So in this case the Leader election follows a first-come-first-served logic,
+based on \texttt{term numbers} \cite{tanenbaum2007distributed}.
+The Raft protocol dictates that a Candidate may only be elected if its log
 is at least as up-to-date as any other log in that majority \cite{184040}.
-In our example, the logs are empty and thus, identical, so this condition is
+In our example, the logs are empty, so they are identical, it follows that this condition is
 automatically respected.
 
 \subsection{Securing Leadership}
-Thus, a follower will grant its vote to the first candidate that requests it
+As said, a Follower will grant its vote to the first Candidate that requests it
 during a new term \cite{tanenbaum2007distributed}.
 Upon securing votes from a majority of the servers, including its own vote, a
-candidate promotes itself to the leader state.
-It then immediately dispatches heartbeat messages to assert its leadership and
-suppress further elections \cite{tanenbaum2007distributed}.
-If a candidate receives a heartbeat from an entity claiming to be leader with a
-term number equal to or greater than its own, it acknowledges the leader and reverts
-to the follower state \cite{tanenbaum2007distributed}.
+Candidate promotes itself to the Leader state, it then immediately dispatches heartbeat 
+messages to assert its Leadership and suppress further elections \cite{tanenbaum2007distributed}.
+If a Candidate receives a heartbeat from an entity claiming to be Leader with a
+term number equal to or greater than its own, it acknowledges the Leader and reverts
+to the Follower state \cite{tanenbaum2007distributed}.
 
 \section{Vulnerability to Election Failures}
 \subsection{Split Votes}
 Despite the simplified state of the logs, elections can still fail due to split votes \cite{tanenbaum2007distributed}.
-If multiple followers experience an election timeout simultaneously, they will transition
-into candidates, increment their term numbers, and cast votes for themselves at the
+If multiple Followers experience an election timeout simultaneously, they will transition
+into Candidates, increment their term numbers, and cast votes for themselves at the
 exact same time \cite{tanenbaum2007distributed}.
 Because the remaining servers allocate their votes on a first-come-first-served basis,
-the votes may be distributed in such a way that no single candidate achieves
+the votes may be distributed in such a way that no single Candidate achieves
 the requisite majority \cite{tanenbaum2007distributed}.
 
 \subsection{Mitigation with Randomized Timeouts}
-This results in a failed election and a stalemate that persists until a candidate
+This results in a failed election and a stalemate that persists until a Candidate
 timeout occurs \cite{tanenbaum2007distributed}.
-At this point, the candidates increment their term numbers and
+At this point, the Candidates increment their term numbers and
 initiate a subsequent election round \cite{tanenbaum2007distributed}.
 To mitigate the risk of indefinite split-vote loops, Raft employs randomized
-election timeouts on a per-server basis \cite{tanenbaum2007distributed}.
+election timeouts per-server \cite{tanenbaum2007distributed}.
 By assigning timeouts randomly from a fixed interval, such as 150 to 300 milliseconds,
 the protocol ensures that it is highly probable for one server to time out before
 its peers \cite{tanenbaum2007distributed}.
-This early candidate can then secure the majority vote and broadcast
-heartbeats to establish its leadership before a split vote can manifest \cite{tanenbaum2007distributed}.
+This early Candidate can then secure the majority vote and broadcast
+heartbeats to establish its Leadership before a split vote can manifest \cite{tanenbaum2007distributed}.
 
 
 % --- Bibliography Section ---
