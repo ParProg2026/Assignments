@@ -1,0 +1,110 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+% --- Font Settings ---
+\renewcommand\familydefault{\sfdefault}
+\usepackage{tgheros}
+% zi4 is a high-quality, professional monospaced font available in almost all distributions
+\usepackage[varqu]{zi4} 
+
+\usepackage{amsmath,amssymb,amsthm,textcomp}
+\usepackage{geometry}
+\geometry{left=25mm,right=25mm, top=20mm,bottom=20mm}
+
+\linespread{1.3}
+\newcommand{\linia}{\rule{\linewidth}{0.5pt}}
+
+% --- Header and Footer ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{Assignment Report}
+\cfoot{}
+\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% --- Code Listing Settings ---
+\usepackage{listings}
+\lstset{
+    language=Go,
+    basicstyle=\ttfamily\small,
+    aboveskip={1.0\baselineskip},
+    belowskip={1.0\baselineskip},
+    columns=fixed,
+    extendedchars=true,
+    breaklines=true,
+    tabsize=4,
+    frame=lines,
+    keywordstyle=\color[rgb]{0.627,0.126,0.941},
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\color[rgb]{0,0,0},
+    numbers=left,
+    numberstyle=\small,
+    stepnumber=1,
+    numbersep=10pt,
+    captionpos=t
+}
+
+\begin{document}
+
+\begin{center}
+\vspace{2ex}
+{\huge \textsc{CADP - Log replication in Raft}}
+\vspace{1ex}
+\\
+\linia\\
+Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl \hfill \today % Replace with your name
+\vspace{4ex}
+\end{center}
+
+\section*{Description of solution}
+We are shown the entry log of 5 servers, and are tasked with showing the message exchanges as the servers update their logs to match the leader. The initial server logs are listed as follows:
+
+\begin{verbatim}
+Log Index:                      1 2 3 4 5 6 7 8 9
+Leader for term 8:            [ 1 1 2 3 4 6 6     ]
+(a):                          [ 1 1 2 3 4 6       ]
+(b):                          [ 1 1 2 3 5         ]
+(c):                          [ 1 1 2 3 4 6 6 7   ]
+(d):                          [ 1 1 2 2 2 2       ]
+\end{verbatim}
+
+When a server becomes leader it initializes a new \textbf{nextIndex}[] and \textbf{matchIndex}[] set to the next empty index (8) and 0 respectively for each follower. NextIndex will keep track of the index each follower is currently seeking, while matchIndex is set to the last known index confirmed to match the leaders entry. 
+The leader begins sending heartbeats in the form of empty \textit{AppendEntriesRequests} (AERq) which contain information about the previous entries index and term. The followers will send \textit{AppendEntriesResponses} (AERp) based on whether the information provided is in accordance to their logs.
+
+\subsection*{Server (a):}
+A heartbeat is received with Term = 8 pIndex = 7 and pTerm = 6.
+The server updates its term to 8 but sees pIndex is greater than the length of its log.
+The server sends back AERp with \textit{Success: false}. The leader decrements nextIndex for (a) from 8 to 7 and sends the entry for index 7. Server (a) then sees pIndex and pTerm match its own log and appends index entry 7 to its own log and sends AERp with \textit{Success: true}. The leader sets nextIndex[a] = 8 and matchIndex[a] = 7
+
+\subsection*{Server (b):}
+As with (a), (b) sends back an AERp with \textit{Success: false}, Leader has to decrement nextIndex three times in total. On the second attempt, pIndex = 5, matches for server (b) but pTerm is different $4\neq5$. Leader decrements nextIndex and tries again, sending entries for indexes 5-7. (b) replaces its entry in index 5, appends entry indexes 6 and 7 and sends AERp \textit{Success: true}. The leader then sets nextIndex[b] = 8 and matchIndex[b] = 7
+
+\newpage
+
+\subsection*{Server (c):}
+Server (c) has an extraneous entry. When (c) receives the heartbeat, it will match the index to its log and sends AERp \textit{Success: true}, but it won't affect the log at index 8. The Raft algorithm will only delete entries when a conflict has been detected. As such the entry in index 8 will only be deleted when the next non-heartbeat AERq is sent with term 8. The leader will set nextIndex[c] = 8 and matchIndex[c] = 7 after receiving the AERp.
+
+\subsection*{Server (d):}
+As with (a) and (b), the leader will decrement nextIndex to 4 and send all of its entries from indexes 4-7. (d) will match the previous index and term as valid and clear all of its entries after index 3, and append entry indexes 4-7, return AERp \textit{Success: true}. The leader then sets nextIndex[d] = 8 and matchIndex[d] = 7.
+
+\subsection*{conclusion:}
+By the end, all followers' logs will match the leader's up to index 7, with (c) still carrying its extraneous entry. The leader's nextIndex and matchIndex are set to 8 and 7 respectively for all followers.
+
+\begin{verbatim}
+Final result:
+Log Index:                      1 2 3 4 5 6 7 8 9
+Leader for term 8:            [ 1 1 2 3 4 6 6     ]
+(a):                          [ 1 1 2 3 4 6 6     ]
+(b):                          [ 1 1 2 3 4 6 6     ]
+(c):                          [ 1 1 2 3 4 6 6 7   ]
+(d):                          [ 1 1 2 3 4 6 6     ]
+\end{verbatim}
+
+\end{document}
