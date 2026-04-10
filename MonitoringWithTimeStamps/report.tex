@@ -1,0 +1,80 @@
+\documentclass[a4paper,11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+% --- Font Settings ---
+\renewcommand\familydefault{\sfdefault}
+\usepackage{tgheros}
+% zi4 is a high-quality, professional monospaced font available in almost all distributions
+\usepackage[varqu]{zi4} 
+
+\usepackage{amsmath,amssymb,amsthm,textcomp}
+\usepackage{geometry}
+\geometry{left=25mm,right=25mm, top=20mm,bottom=20mm}
+
+\linespread{1.3}
+\newcommand{\linia}{\rule{\linewidth}{0.5pt}}
+
+% --- Header and Footer ---
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{Assignment Report}
+\cfoot{}
+\rfoot{Page \thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% --- Code Listing Settings ---
+\usepackage{listings}
+\lstset{
+    language=Go,
+    basicstyle=\ttfamily\small,
+    aboveskip={1.0\baselineskip},
+    belowskip={1.0\baselineskip},
+    columns=fixed,
+    extendedchars=true,
+    breaklines=true,
+    tabsize=4,
+    frame=lines,
+    keywordstyle=\color[rgb]{0.627,0.126,0.941},
+    commentstyle=\color[rgb]{0.133,0.545,0.133},
+    stringstyle=\color[rgb]{0,0,0},
+    numbers=left,
+    numberstyle=\small,
+    stepnumber=1,
+    numbersep=10pt,
+    captionpos=t
+}
+
+\begin{document}
+
+\begin{center}
+\vspace{2ex}
+{\huge \textsc{CADP - Monitoring with time stamps}}
+\vspace{1ex}
+\\
+\linia\\
+Alessandro Monticelli, Jóhannes Helgi Tómasson, Jonas Stahl \hfill \today % Replace with your name
+\vspace{4ex}
+\end{center}
+
+\section*{Description of problem}
+\subsection*{Jones is running a collection of processes $p_1, p_2, ..., p_n$. Each process $p_i$ contains variable $v_i$. She wishes to determine whether all the variables $v_1, v_2, ..., v_n$ were ever equal in the course of the execution.}
+
+\subsubsection*{1. Jones’ processes run in a synchronous system. She uses a monitoring process to determine whether the variables were ever equal. When should the application processes communicate with the monitor process, and what should their messages contain? Argue the correctness. Explain that monitoring does not change the intended behaviour of the monitored process if the monitor cooperates.}
+For a synchronous process group, the monitor can act as a leader, asking the processes for a snapshot within some bounded time frame. The processes sends its current value $v_i$ along with a term number given by the monitor, and a process ID. By having the monitor ask for snapshots, we might miss certain values changes in between snapshots, but it allows us to know what the values were for each process at roughly the same time. 
+
+By knowing the values, terms and ID, we can ensure correctness. The terms tell us roughly the time at which the snapshot was taken, while IDs ensure that RPC message are sent at least once, meaning that we can discard duplicate sends from obscuring the results of each term. With this we can compare the values for process ID during each term to see if the values are all the same.
+
+The monitor will have no effect on the intended behavior of the processes. All the monitor provides is an RPC asking for a snapshot and a term number, which is only used in the response message from the processes. The core structure of the processes remain unchanged and the messages have no affect on the internal mechanism of the value generation.
+
+
+\subsubsection*{2. Explain the statement possibly $v_1 = v_2 = ... = v_n$. How can Jones determine whether this statement is true of her execution?}
+We cannot say for certain that all values $v_i$ were the same in the exact same instant, since the snapshots are only taken periodically and the difference between when the snapshot was taken can vary slightly between processes because of network latency, process performance or runtime scheduling. If all values for a given term are equal, we can infer that the statement "possibly $v_1 = v_2 = ... = v_n$" is true.
+
+\end{document}
